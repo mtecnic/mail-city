@@ -1,4 +1,4 @@
-import { app, BrowserWindow, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, safeStorage, shell, powerMonitor } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { join } from 'node:path'
@@ -7,7 +7,12 @@ import { Kernel } from '@kernel/index'
 import { setLogSink } from '@kernel/utils/logger'
 import { createMainWindow } from './windows/main'
 import { registerIpc } from './ipc'
+import { emit } from './ipc/router'
 import { electronCipher } from './cipher'
+import { createTray, destroyTray, showMainWindow, updateUnreadBadge } from './tray'
+import { installNotifications } from './notifications'
+import { registerProtocol, handleArgv, installJumpList, applyLoginItem } from './protocol'
+import { installUpdater } from './updater'
 
 // ---- logging -------------------------------------------------------------
 log.initialize()
@@ -26,22 +31,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', (_e, argv) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    }
-    const mailto = argv.find((a) => a.startsWith('mailto:'))
-    if (mailto) win?.webContents.send('event:mailto', mailto)
+    if (!handleArgv(argv)) showMainWindow()
   })
 
   app.setAppUserModelId('com.mtecnic.mailcity')
-  if (process.defaultApp) {
-    if (process.argv[1]) app.setAsDefaultProtocolClient('mailto', process.execPath, [join(process.cwd(), process.argv[1])])
-  } else {
-    app.setAsDefaultProtocolClient('mailto')
-  }
+  registerProtocol()
 
   let kernel: Kernel | null = null
 
@@ -63,11 +57,42 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     registerIpc(kernel)
+    installNotifications(kernel)
+    installJumpList()
+    installUpdater()
+    applyLoginItem(kernel.settings.get().launchAtLogin)
+    kernel.settings.on('changed', (s) => applyLoginItem(s.launchAtLogin))
 
-    createMainWindow()
+    const hidden = process.argv.includes('--hidden')
+    createMainWindow(kernel, { hidden })
+    createTray(kernel, {
+      compose: () => {
+        showMainWindow()
+        emit('app.compose', undefined)
+      },
+      openSettings: () => {
+        showMainWindow()
+        emit('app.openSettings', undefined)
+      }
+    })
+
+    const k = kernel
+    const badge = () => updateUnreadBadge(k)
+    k.sync.on('messagesChanged', badge)
+    k.sync.on('foldersChanged', badge)
+    k.rules.on('applied', badge)
+    k.snooze.on('woke', badge)
+    setTimeout(badge, 2000)
+
+    powerMonitor.on('resume', () => k.sync.syncNow())
+    powerMonitor.on('unlock-screen', () => k.sync.syncNow())
+
+    // mailto: on cold start (Windows passes it in argv).
+    setTimeout(() => handleArgv(process.argv), 1500)
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+      if (BrowserWindow.getAllWindows().length === 0) createMainWindow(k)
+      else showMainWindow()
     })
   })
 
@@ -75,7 +100,17 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin') app.quit()
   })
 
-  app.on('before-quit', async () => {
-    await kernel?.shutdown()
+  app.on('before-quit', () => {
+    ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    destroyTray()
+  })
+
+  app.on('will-quit', (e) => {
+    if (!kernel) return
+    const k = kernel
+    kernel = null
+    e.preventDefault()
+    // Give the outbox/sync a moment to flush, then really quit.
+    Promise.race([k.shutdown(), new Promise((r) => setTimeout(r, 3000))]).finally(() => app.quit())
   })
 }

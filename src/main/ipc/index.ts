@@ -1,4 +1,6 @@
-import { app, shell, dialog, BrowserWindow } from 'electron'
+import { app, shell, dialog, BrowserWindow, Notification } from 'electron'
+import { takePendingMailto } from '../protocol'
+import { currentUpdateStatus, checkForUpdates, installUpdateNow } from '../updater'
 import { readFile, copyFile } from 'node:fs/promises'
 import type { Kernel } from '@kernel/index'
 import type { AppSettingsPatch } from '@shared/schemas/settings'
@@ -155,6 +157,19 @@ export function registerIpc(kernel: Kernel): void {
   kernel.snooze.on('woke', (ids) => {
     emit('snooze.woke', { ids })
     emit('messages.changed', { accountId: '', folderId: '' })
+  })
+
+  // ---- app integration -----------------------------------------------------
+  handle('app.pendingMailto', () => takePendingMailto())
+  handle('app.showNotificationTest', () => {
+    const n = new Notification({ title: 'Mail City', body: 'Notifications are working.' })
+    n.show()
+  })
+  handle('update.status', () => currentUpdateStatus())
+  handle('update.check', () => checkForUpdates())
+  handle('update.install', () => installUpdateNow())
+  handle('app.openLogs', async () => {
+    await shell.openPath(app.getPath('logs'))
   })
 
   kernel.outbox.on('changed', () => emit('outbox.changed', undefined))

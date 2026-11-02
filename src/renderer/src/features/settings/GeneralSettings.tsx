@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@renderer/lib/api'
-import { Field, Select, Input } from '@renderer/components/ui'
+import { Field, Select, Input, Button } from '@renderer/components/ui'
 import type { AppSettings } from '@shared/schemas/settings'
 
 export function GeneralSettings() {
@@ -48,6 +48,30 @@ export function GeneralSettings() {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={v.notifications.enabled} onChange={(e) => save.mutate({ notifications: { enabled: e.target.checked } })} /> Show notifications for new mail
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={v.notifications.sound} onChange={(e) => save.mutate({ notifications: { sound: e.target.checked } })} /> Play a sound
+        </label>
+        <div>
+          <Button size="sm" variant="ghost" onClick={() => invoke('app.showNotificationTest')}>
+            Send a test notification
+          </Button>
+        </div>
+        <Field label="Remote images in messages">
+          <Select value={v.privacy.loadRemoteImages} onChange={(e) => save.mutate({ privacy: { loadRemoteImages: e.target.value } })}>
+            <option value="never">Block (click to load)</option>
+            <option value="always">Always load</option>
+          </Select>
+        </Field>
+      </div>
+
+      <h3 className="pt-4 text-sm font-semibold">Updates & diagnostics</h3>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={() => invoke('update.check')}>
+          Check for updates
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => invoke('app.openLogs')}>
+          Open log folder
+        </Button>
       </div>
     </div>
   )

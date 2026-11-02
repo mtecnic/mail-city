@@ -9,7 +9,10 @@ files:
 asarUnpack:
   - '**/*.node'
   - '**/sqlite-vec-*/**'
-extraResources: []
+extraResources:
+  - from: resources
+    to: resources
+    filter: ['*.png', '*.ico']
 protocols:
   - name: mailto
     schemes: [mailto]
@@ -19,6 +22,7 @@ win:
     - portable
   artifactName: ${productName}-${version}-${arch}.${ext}
   executableName: MailCity
+  icon: resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

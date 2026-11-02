@@ -9,9 +9,15 @@ import { ComposeDock } from '@renderer/features/compose/ComposeWindow'
 import { OutboxView, UndoSendToast } from '@renderer/features/compose/OutboxView'
 import { useComposeActions } from '@renderer/features/compose/useComposeActions'
 import { SearchBar } from './SearchBar'
+import { AppEvents, UpdateBanner } from '@renderer/features/app/AppEvents'
+import { Welcome, ShortcutHelp } from '@renderer/features/app/Welcome'
+import { useQuery } from '@tanstack/react-query'
+import { invoke } from '@renderer/lib/api'
 
 export function MailView({ onSettings }: { onSettings: () => void }) {
   const [adding, setAdding] = useState(false)
+  const [help, setHelp] = useState(false)
+  const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
   const { mailbox, selectedMessageId, selectedIds, selectMessage } = useUi()
   const actions = useMailActions()
   const compose = useComposeActions()
@@ -33,6 +39,11 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       if (e.key === 'c') {
         e.preventDefault()
         void compose.newMessage()
+        return
+      }
+      if (e.key === '?') {
+        e.preventDefault()
+        setHelp((h) => !h)
         return
       }
       const ids = selectedIds.length ? selectedIds : selectedMessageId ? [selectedMessageId] : []
@@ -73,9 +84,14 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   }, [selectedIds, selectedMessageId, actions, selectMessage, compose])
 
   return (
-    <div className="flex h-screen w-screen">
+    <div className="flex h-screen w-screen flex-col">
+      <AppEvents />
+      <UpdateBanner />
+      <div className="flex min-h-0 flex-1">
       <Sidebar onAddAccount={() => setAdding(true)} onSettings={onSettings} />
-      {mailbox.kind === 'outbox' ? (
+      {accounts.data?.length === 0 ? (
+        <Welcome onAddAccount={() => setAdding(true)} />
+      ) : mailbox.kind === 'outbox' ? (
         <section className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-10 items-center border-b border-border px-3 text-sm font-semibold">{title}</header>
           <OutboxView />
@@ -92,7 +108,9 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
           </section>
         </>
       )}
+      </div>
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
+      <ShortcutHelp open={help} onClose={() => setHelp(false)} />
       <ComposeDock />
       <UndoSendToast />
     </div>

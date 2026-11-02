@@ -66,6 +66,16 @@ export const ConnectionTestResultSchema = z.object({
   smtp: z.object({ ok: z.boolean(), error: z.string().optional() })
 })
 
+export const MailtoSchema = z.object({ to: z.array(z.string()), cc: z.array(z.string()), bcc: z.array(z.string()), subject: z.string(), body: z.string() })
+export const UpdateStatusSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('idle') }),
+  z.object({ state: z.literal('checking') }),
+  z.object({ state: z.literal('available'), version: z.string() }),
+  z.object({ state: z.literal('downloading'), percent: z.number() }),
+  z.object({ state: z.literal('downloaded'), version: z.string() }),
+  z.object({ state: z.literal('error'), message: z.string() })
+])
+
 export const channels = {
   'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string() })),
   'app.openExternal': defineChannel(z.object({ url: z.string().url() }), z.void()),
@@ -153,8 +163,17 @@ export const channels = {
   'rules.reorder': defineChannel(z.object({ ids: z.array(z.string()) }), z.void()),
   'rules.applyNow': defineChannel(z.object({ folderId: z.string().optional(), ruleId: z.string().optional() }), z.object({ affected: z.number() })),
   'messages.snooze': defineChannel(z.object({ ids: z.array(z.string()).min(1), until: z.string() }), z.void()),
-  'messages.unsnooze': defineChannel(z.object({ ids: z.array(z.string()).min(1) }), z.void())
+  'messages.unsnooze': defineChannel(z.object({ ids: z.array(z.string()).min(1) }), z.void()),
+
+  // ---- app integration -----------------------------------------------------
+  'app.pendingMailto': defineChannel(z.void(), MailtoSchema.nullable()),
+  'app.showNotificationTest': defineChannel(z.void(), z.void()),
+  'update.status': defineChannel(z.void(), UpdateStatusSchema),
+  'update.check': defineChannel(z.void(), z.void()),
+  'update.install': defineChannel(z.void(), z.void()),
+  'app.openLogs': defineChannel(z.void(), z.void())
 } as const
+
 
 export type Channels = typeof channels
 export type ChannelName = keyof Channels
@@ -179,7 +198,14 @@ export const events = {
   'outbox.sent': z.object({ id: z.string() }),
   'outbox.failed': z.object({ id: z.string(), error: z.string() }),
   'rules.changed': z.void(),
-  'snooze.woke': z.object({ ids: z.array(z.string()) })
+  'snooze.woke': z.object({ ids: z.array(z.string()) }),
+  'unread.changed': z.object({ total: z.number() }),
+  'app.mailto': MailtoSchema,
+  'app.compose': z.void(),
+  'app.openSettings': z.void(),
+  'app.openMessage': z.object({ id: z.string(), accountId: z.string(), folderId: z.string() }),
+  'app.openOutbox': z.object({ id: z.string() }),
+  'update.status': UpdateStatusSchema
 } as const
 
 export type Events = typeof events
