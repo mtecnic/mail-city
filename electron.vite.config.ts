@@ -14,8 +14,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
-          'sync-worker': resolve('src/main/workers/sync-worker.ts'),
-          'mcp-stdio': resolve('src/main/workers/mcp-stdio.ts')
+          'sync-worker': resolve('src/main/workers/sync-worker.ts')
         }
       }
     }

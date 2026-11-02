@@ -38,7 +38,10 @@ export class SettingsStore extends TypedEmitter<{ changed: [AppSettings] }> {
   getValue<T extends z.ZodTypeAny>(key: string, schema: T): z.output<T> {
     const row = this.db.select().from(settings).where(eq(settings.key, key)).get()
     const parsed = schema.safeParse(row?.value)
-    return parsed.success ? parsed.data : schema.parse(undefined)
+    if (parsed.success) return parsed.data
+    // Fall back to the schema's defaults: an empty object for object schemas, else undefined.
+    const empty = schema.safeParse({})
+    return empty.success ? empty.data : schema.parse(undefined)
   }
 
   setValue(key: string, value: unknown): void {

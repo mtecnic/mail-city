@@ -33,7 +33,7 @@ export class SearchService {
 
     let fromClause = 'FROM messages m'
     if (q.match) {
-      fromClause = 'FROM messages_fts f JOIN messages m ON m.id = f.message_id'
+      fromClause = 'FROM messages_fts JOIN messages m ON m.id = messages_fts.message_id'
       where.push('messages_fts MATCH ?')
       params.push(q.match)
     }
@@ -95,7 +95,7 @@ export class SearchService {
     if (!q.match && !where.length) return []
 
     // Rank: strong text relevance first, then recency. bm25 is negative (lower = better).
-    const order = q.match ? 'ORDER BY (bm25(messages_fts) * 0.6 - (julianday(m.date) - julianday("now")) * 0.01) ASC' : 'ORDER BY m.date DESC'
+    const order = q.match ? "ORDER BY (bm25(messages_fts) * 0.6 - (julianday(m.date) - julianday('now')) * 0.01) ASC" : 'ORDER BY m.date DESC'
     const sql = `SELECT m.id ${fromClause} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ${order} LIMIT ? OFFSET ?`
     params.push(limit, opts.offset ?? 0)
     const ids = (this.raw.prepare(sql).all(...params) as { id: string }[]).map((r) => r.id)

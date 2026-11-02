@@ -16,6 +16,7 @@ import { FolderSchema, ListMessagesQuerySchema, MessageDetailSchema, MessageFlag
 import { DraftAttachmentSchema, DraftInputSchema, DraftSchema, IdentitySchema, OutboxItemSchema, ReplyModeSchema, ReplyTemplateSchema, SignatureSchema } from './schemas/compose'
 import { RuleInputSchema, RuleSchema } from './schemas/rules'
 import { AiFeatureSchema, AiModelInfoSchema, AiProviderConfigSchema, AiRunSchema, AiSettingsSchema, LocalServerProbeSchema, ModelCapabilitiesSchema } from './schemas/ai'
+import { McpSettingsSchema, McpStatusSchema } from './schemas/mcp'
 
 export const ContactSchema = z.object({
   id: z.string(),
@@ -240,7 +241,16 @@ export const channels = {
   'agent.session.remove': defineChannel(z.object({ id: z.string() }), z.void()),
   'agent.send': defineChannel(z.object({ sessionId: z.string(), text: z.string().min(1) }), z.void()),
   'agent.cancel': defineChannel(z.object({ sessionId: z.string() }), z.void()),
-  'agent.confirm': defineChannel(z.object({ id: z.string(), ok: z.boolean() }), z.void())
+  'agent.confirm': defineChannel(z.object({ id: z.string(), ok: z.boolean() }), z.void()),
+
+  // ---- MCP ----------------------------------------------------------------------
+  'mcp.settings.get': defineChannel(z.void(), McpSettingsSchema),
+  'mcp.settings.set': defineChannel(z.record(z.string(), z.unknown()), McpSettingsSchema),
+  'mcp.status': defineChannel(z.void(), McpStatusSchema),
+  'mcp.token.reveal': defineChannel(z.void(), z.string()),
+  'mcp.token.regenerate': defineChannel(z.void(), z.string()),
+  'mcp.confirm': defineChannel(z.object({ id: z.string(), answer: z.union([z.boolean(), z.literal('always')]) }), z.void()),
+  'mcp.configSnippets': defineChannel(z.void(), z.object({ claudeDesktopStdio: z.string(), claudeCodeStdio: z.string(), claudeCodeHttp: z.string(), genericHttp: z.string(), exePath: z.string() }))
 } as const
 
 
@@ -285,7 +295,9 @@ export const events = {
   'agent.event': z.object({ sessionId: z.string(), event: TranscriptEventSchema }),
   'agent.delta': z.object({ sessionId: z.string(), delta: z.discriminatedUnion('type', [z.object({ type: z.literal('text'), text: z.string() }), z.object({ type: z.literal('tool_start'), name: z.string() }), z.object({ type: z.literal('thinking'), text: z.string() })]) }),
   'agent.done': z.object({ sessionId: z.string() }),
-  'agent.confirm': z.object({ sessionId: z.string(), id: z.string(), tool: z.string(), risk: z.string(), summary: z.string(), input: z.unknown() })
+  'agent.confirm': z.object({ sessionId: z.string(), id: z.string(), tool: z.string(), risk: z.string(), summary: z.string(), input: z.unknown() }),
+  'mcp.confirm': z.object({ id: z.string(), client: z.string(), tool: z.string(), risk: z.string(), summary: z.string(), input: z.unknown() }),
+  'mcp.status': McpStatusSchema
 } as const
 
 export type Events = typeof events

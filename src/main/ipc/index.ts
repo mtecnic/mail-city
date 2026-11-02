@@ -8,6 +8,9 @@ import type { AiSettingsPatch } from '@shared/schemas/ai'
 import type { StreamDelta } from '@kernel/ai/llm/types'
 import { summarizeThread, smartReplies, extractFromMessage, eventToIcs, draftEmail, ruleFromText, explainPhishing, localPhishingHeuristics, unsubscribeOptions, oneClickUnsubscribe } from '@kernel/ai/features'
 import { askMail } from '@kernel/ai/features/askMail'
+import type { McpHttpServer } from '../mcpHttp'
+import { getMcpSettings, setMcpSettings } from '@kernel/ai/mcp/McpBridge'
+import type { McpSettingsPatch } from '@shared/schemas/mcp'
 import { handle, emit } from './router'
 import { SavedSearchesSchema } from '@shared/ipc'
 
@@ -24,6 +27,14 @@ const MIME_BY_EXT: Record<string, string> = {
 function mimeFromName(p: string): string {
   const ext = p.split('.').pop()?.toLowerCase() ?? ''
   return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
+
+let mcpHttp: McpHttpServer | null = null
+export function setMcpHttp(s: McpHttpServer): void {
+  mcpHttp = s
+}
+export function getMcpHttp(): McpHttpServer | null {
+  return mcpHttp
 }
 
 export function registerIpc(kernel: Kernel): void {
@@ -269,6 +280,34 @@ export function registerIpc(kernel: Kernel): void {
   kernel.agent.on('delta', (sessionId, delta) => emit('agent.delta', { sessionId, delta }))
   kernel.agent.on('done', (sessionId) => emit('agent.done', { sessionId }))
   kernel.agent.on('confirm', (sessionId, req) => emit('agent.confirm', { sessionId, ...req }))
+
+  // ---- MCP ---------------------------------------------------------------------
+  handle('mcp.settings.get', () => getMcpSettings(kernel))
+  handle('mcp.settings.set', async (patch) => {
+    const next = setMcpSettings(kernel, patch as McpSettingsPatch)
+    if (mcpHttp) {
+      if (next.httpEnabled && !mcpHttp.running) await mcpHttp.start()
+      if (!next.httpEnabled && mcpHttp.running) await mcpHttp.stop()
+    }
+    emit('mcp.status', mcpHttp?.status() ?? { httpRunning: false, url: null, sessions: 0, stdioCommand: `${process.execPath} --mcp`, hasToken: false })
+    return next
+  })
+  handle('mcp.status', () => mcpHttp?.status() ?? { httpRunning: false, url: null, sessions: 0, stdioCommand: `${process.execPath} --mcp`, hasToken: false })
+  handle('mcp.token.reveal', () => mcpHttp?.token() ?? '')
+  handle('mcp.token.regenerate', () => mcpHttp?.regenerateToken() ?? '')
+  handle('mcp.confirm', ({ id, answer }) => mcpHttp?.broker.resolve(id, answer))
+  handle('mcp.configSnippets', () => {
+    const exe = process.execPath.replace(/\\/g, '\\\\')
+    const url = mcpHttp?.url()
+    const token = mcpHttp?.token() ?? ''
+    return {
+      claudeDesktopStdio: JSON.stringify({ mcpServers: { 'mail-city': { command: process.execPath, args: ['--mcp'] } } }, null, 2),
+      claudeCodeStdio: `claude mcp add mail-city -- "${process.execPath}" --mcp`,
+      claudeCodeHttp: url ? `claude mcp add --transport http mail-city ${url} --header "Authorization: Bearer ${token}"` : '',
+      genericHttp: url ? JSON.stringify({ mcpServers: { 'mail-city': { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2) : '',
+      exePath: exe
+    }
+  })
 
   kernel.ai.on('changed', (s) => emit('ai.settings.changed', s))
   kernel.ai.on('pullProgress', (p) => emit('ai.pullProgress', p))

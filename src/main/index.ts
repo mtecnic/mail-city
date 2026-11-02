@@ -13,6 +13,10 @@ import { createTray, destroyTray, showMainWindow, updateUnreadBadge } from './tr
 import { installNotifications } from './notifications'
 import { registerProtocol, handleArgv, installJumpList, applyLoginItem } from './protocol'
 import { installUpdater } from './updater'
+import { runMcpStdio } from './mcpStdio'
+import { McpHttpServer } from './mcpHttp'
+import { getMcpSettings } from '@kernel/ai/mcp/McpBridge'
+import { setMcpHttp, getMcpHttp } from './ipc'
 
 // ---- logging -------------------------------------------------------------
 log.initialize()
@@ -26,8 +30,15 @@ setLogSink({
   }
 })
 
+// ---- headless MCP mode -----------------------------------------------------
+if (process.argv.includes('--mcp')) {
+  void runMcpStdio().catch((e) => {
+    process.stderr.write(`mcp stdio failed: ${e instanceof Error ? e.message : String(e)}\n`)
+    app.exit(1)
+  })
+}
 // ---- single instance -----------------------------------------------------
-if (!app.requestSingleInstanceLock()) {
+else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', (_e, argv) => {
@@ -57,6 +68,9 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     registerIpc(kernel)
+    const mcp = new McpHttpServer(kernel)
+    setMcpHttp(mcp)
+    if (getMcpSettings(kernel).httpEnabled) mcp.start().catch((e) => log.warn('MCP HTTP failed to start', e))
     installNotifications(kernel)
     installJumpList()
     installUpdater()
@@ -111,6 +125,6 @@ if (!app.requestSingleInstanceLock()) {
     kernel = null
     e.preventDefault()
     // Give the outbox/sync a moment to flush, then really quit.
-    Promise.race([k.shutdown(), new Promise((r) => setTimeout(r, 3000))]).finally(() => app.quit())
+    Promise.race([Promise.all([k.shutdown(), getMcpHttp()?.stop()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => app.quit())
   })
 }
