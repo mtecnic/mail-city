@@ -215,6 +215,42 @@ export const rules = sqliteTable('rules', {
   createdAt: text('created_at').notNull()
 })
 
+export interface DraftAttachment {
+  /** Absolute path on disk (user-picked file or copied into dataDir/drafts). */
+  path: string
+  filename: string
+  size: number
+  mimeType: string
+  /** Set for inline images referenced from the HTML as cid:… */
+  cid?: string
+}
+
+export const drafts = sqliteTable(
+  'drafts',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    identityId: text('identity_id'),
+    toList: json<Address[]>('to_json').notNull().default([]),
+    ccList: json<Address[]>('cc_json').notNull().default([]),
+    bccList: json<Address[]>('bcc_json').notNull().default([]),
+    subject: text('subject').notNull().default(''),
+    html: text('html').notNull().default(''),
+    text: text('text').notNull().default(''),
+    attachments: json<DraftAttachment[]>('attachments_json').notNull().default([]),
+    inReplyToMessageId: text('in_reply_to_message_id'),
+    replyMode: text('reply_mode'), // reply|replyAll|forward|null
+    serverFolderId: text('server_folder_id'),
+    serverUid: integer('server_uid'),
+    updatedAt: text('updated_at').notNull(),
+    createdAt: text('created_at').notNull()
+  },
+  (t) => [index('drafts_account').on(t.accountId, t.updatedAt)]
+)
+export type DraftRow = typeof drafts.$inferSelect
+
 export const outbox = sqliteTable('outbox', {
   id: text('id').primaryKey(),
   accountId: text('account_id')
@@ -230,6 +266,9 @@ export const outbox = sqliteTable('outbox', {
   scheduledAt: text('scheduled_at'),
   undoUntil: text('undo_until'),
   inReplyToMessageId: text('in_reply_to_message_id'),
+  replyMode: text('reply_mode'),
+  /** Snapshot of the draft so "Undo send" can restore it. */
+  draftJson: json<Record<string, unknown>>('draft_json'),
   createdAt: text('created_at').notNull()
 })
 

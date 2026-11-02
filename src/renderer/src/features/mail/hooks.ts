@@ -13,7 +13,8 @@ export function useFolders() {
 
 export function listQueryFor(sel: MailboxSelection): ChannelInput<'messages.list'> {
   if (sel.kind === 'unified') return sel.specialUse === 'flagged' ? { flaggedOnly: true, specialUse: 'inbox' } : { specialUse: sel.specialUse }
-  return { accountId: sel.accountId, folderId: sel.folderId }
+  if (sel.kind === 'folder') return { accountId: sel.accountId, folderId: sel.folderId }
+  return { limit: 1, folderId: '__none__' }
 }
 
 const PAGE = 60
@@ -25,7 +26,7 @@ export function useMessageList(sel: MailboxSelection) {
   useEffect(
     () =>
       onEvent('messages.changed', (e) => {
-        if (sel.kind === 'unified' || e.folderId === sel.folderId) void qc.invalidateQueries({ queryKey: ['messages'] })
+        if (sel.kind !== 'folder' || e.folderId === sel.folderId) void qc.invalidateQueries({ queryKey: ['messages'] })
       }),
     [qc, sel]
   )

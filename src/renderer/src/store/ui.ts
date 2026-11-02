@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export type MailboxSelection =
   | { kind: 'unified'; specialUse: 'inbox' | 'flagged' | 'sent' | 'drafts' }
   | { kind: 'folder'; accountId: string; folderId: string }
+  | { kind: 'outbox' }
 
 interface UiState {
   mailbox: MailboxSelection

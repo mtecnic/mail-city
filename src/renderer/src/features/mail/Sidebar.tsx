@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, type LucideIcon } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, PenSquare, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, Clock, type LucideIcon } from 'lucide-react'
 import { invoke, useMailEvent } from '@renderer/lib/api'
-import { cn } from '@renderer/components/ui'
+import { Button, cn } from '@renderer/components/ui'
 import { useUi, type MailboxSelection } from '@renderer/store/ui'
 import { useFolders } from './hooks'
+import { useOutbox } from '@renderer/features/compose/OutboxView'
+import { useComposeActions } from '@renderer/features/compose/useComposeActions'
 import type { Folder } from '@shared/schemas/mail'
 
 const SPECIAL_ICON: Record<string, LucideIcon> = { inbox: Inbox, sent: Send, drafts: File, trash: Trash2, junk: AlertOctagon, archive: Archive, all: Archive, flagged: Star }
@@ -16,6 +18,8 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [status, setStatus] = useState<Record<string, { state: string; detail?: string }>>({})
   useMailEvent('sync.status', (e) => setStatus((s) => ({ ...s, [e.accountId]: { state: e.state, detail: e.detail } })))
+  const outbox = useOutbox()
+  const { newMessage } = useComposeActions()
 
   const unifiedUnread = folders.data?.filter((f) => f.specialUse === 'inbox').reduce((n, f) => n + f.unreadCount, 0) ?? 0
   const isSel = (s: MailboxSelection) => JSON.stringify(s) === JSON.stringify(mailbox)
@@ -31,12 +35,19 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
         </button>
       </div>
 
+      <div className="px-2 pb-2">
+        <Button variant="primary" className="w-full" onClick={() => void newMessage()} disabled={!accounts.data?.length}>
+          <PenSquare className="size-4" /> Compose
+        </Button>
+      </div>
+
       <nav className="flex-1 space-y-3 overflow-y-auto px-2 pb-2">
         <div className="space-y-0.5">
           <NavRow icon={Inbox} label="All inboxes" count={unifiedUnread} active={isSel({ kind: 'unified', specialUse: 'inbox' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'inbox' })} />
           <NavRow icon={Star} label="Starred" active={isSel({ kind: 'unified', specialUse: 'flagged' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'flagged' })} />
           <NavRow icon={Send} label="All sent" active={isSel({ kind: 'unified', specialUse: 'sent' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'sent' })} />
           <NavRow icon={File} label="All drafts" active={isSel({ kind: 'unified', specialUse: 'drafts' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'drafts' })} />
+          <NavRow icon={Clock} label="Outbox & local drafts" count={outbox.data?.length} active={isSel({ kind: 'outbox' })} onClick={() => setMailbox({ kind: 'outbox' })} />
         </div>
 
         {accounts.data?.map((a) => {

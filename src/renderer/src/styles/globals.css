@@ -40,3 +40,48 @@ body,
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+
+/* Compose editor content */
+.prose-mail p {
+  margin: 0 0 0.5em;
+}
+.prose-mail blockquote {
+  border-left: 2px solid var(--color-border);
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  color: var(--color-muted);
+}
+.prose-mail ul,
+.prose-mail ol {
+  padding-left: 1.4em;
+  margin: 0.3em 0;
+}
+.prose-mail ul {
+  list-style: disc;
+}
+.prose-mail ol {
+  list-style: decimal;
+}
+.prose-mail a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.prose-mail h1 {
+  font-size: 1.4em;
+  font-weight: 600;
+}
+.prose-mail h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+}
+.prose-mail h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+.prose-mail p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

@@ -18,6 +18,10 @@ import { testConnection, type ConnectionTestResult, type Credentials } from './a
 import { MessageStore } from './mail/MessageStore'
 import { MessageService } from './mail/MessageService'
 import { SyncEngine } from './sync/SyncEngine'
+import { IdentityStore } from './mail/IdentityStore'
+import { DraftStore } from './mail/DraftStore'
+import { OutboxService } from './mail/Outbox'
+import { ComposeService } from './mail/ComposeService'
 import type { ServerConfig } from '@shared/schemas/account'
 import type { AccountSummary } from '@shared/schemas/account'
 
@@ -56,6 +60,10 @@ export class Kernel {
   readonly store: MessageStore
   readonly sync: SyncEngine
   readonly mail: MessageService
+  readonly identities: IdentityStore
+  readonly drafts: DraftStore
+  readonly outbox: OutboxService
+  readonly compose: ComposeService
 
   constructor(readonly options: KernelOptions) {
     this.dbHandle = openDb({ path: options.dbPath ?? `${options.dataDir}/mail-city.sqlite` })
@@ -67,8 +75,15 @@ export class Kernel {
     this.store = new MessageStore(this.db)
     this.sync = new SyncEngine(this.db, this.accounts, this.tokens, this.settings, this.store, options.dataDir)
     this.mail = new MessageService(this.store, this.sync, this.accounts)
+    this.identities = new IdentityStore(this.db)
+    this.drafts = new DraftStore(this.db)
+    this.outbox = new OutboxService(this.db, this.accounts, this.tokens, this.settings, this.store, this.mail, this.sync, this.identities, this.drafts, options.dataDir)
+    this.compose = new ComposeService(this.mail, this.identities, this.drafts, this.store, this.sync, options.dataDir)
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
-    if (options.autoSync !== false) this.sync.start()
+    if (options.autoSync !== false) {
+      this.sync.start()
+      this.outbox.start()
+    }
   }
 
   get db() {
@@ -110,6 +125,7 @@ export class Kernel {
   }
 
   async shutdown(): Promise<void> {
+    this.outbox.stop()
     await this.sync.stop()
     this.dbHandle.close()
   }

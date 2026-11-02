@@ -255,5 +255,32 @@ CREATE VIRTUAL TABLE messages_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 `
+  },
+  {
+    version: 3,
+    name: 'drafts_outbox',
+    sql: `
+CREATE TABLE drafts (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  identity_id TEXT,
+  to_json TEXT NOT NULL DEFAULT '[]',
+  cc_json TEXT NOT NULL DEFAULT '[]',
+  bcc_json TEXT NOT NULL DEFAULT '[]',
+  subject TEXT NOT NULL DEFAULT '',
+  html TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT '',
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  in_reply_to_message_id TEXT,
+  reply_mode TEXT,
+  server_folder_id TEXT,
+  server_uid INTEGER,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX drafts_account ON drafts(account_id, updated_at);
+ALTER TABLE outbox ADD COLUMN draft_json TEXT;
+ALTER TABLE outbox ADD COLUMN reply_mode TEXT;
+`
   }
 ]

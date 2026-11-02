@@ -13,6 +13,7 @@ import { AppSettingsSchema } from './schemas/settings'
 import { AccountSummarySchema, AccountTypeSchema, ServerConfigSchema } from './schemas/account'
 import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth'
 import { FolderSchema, ListMessagesQuerySchema, MessageDetailSchema, MessageFlagsSchema, MessageListItemSchema } from './schemas/mail'
+import { DraftAttachmentSchema, DraftInputSchema, DraftSchema, IdentitySchema, OutboxItemSchema, ReplyModeSchema, ReplyTemplateSchema, SignatureSchema } from './schemas/compose'
 
 export function defineChannel<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(input: I, output: O) {
   return { input, output }
@@ -91,7 +92,33 @@ export const channels = {
   'attachments.saveAs': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), path: z.string().optional() })),
   'attachments.dataUrl': defineChannel(z.object({ id: z.string() }), z.string().nullable()),
 
-  'sync.now': defineChannel(z.object({ accountId: z.string().optional() }), z.void())
+  'sync.now': defineChannel(z.object({ accountId: z.string().optional() }), z.void()),
+
+  // ---- compose ------------------------------------------------------------
+  'compose.replyTemplate': defineChannel(z.object({ messageId: z.string(), mode: ReplyModeSchema }), ReplyTemplateSchema),
+  'compose.pickAttachments': defineChannel(z.void(), z.array(DraftAttachmentSchema)),
+  'compose.send': defineChannel(z.object({ draft: DraftInputSchema, scheduledAt: z.string().optional() }), OutboxItemSchema),
+  'drafts.list': defineChannel(z.object({ accountId: z.string().optional() }), z.array(DraftSchema)),
+  'drafts.get': defineChannel(z.object({ id: z.string() }), DraftSchema.nullable()),
+  'drafts.save': defineChannel(DraftInputSchema, DraftSchema),
+  'drafts.syncToServer': defineChannel(z.object({ id: z.string() }), z.void()),
+  'drafts.discard': defineChannel(z.object({ id: z.string() }), z.void()),
+  'outbox.list': defineChannel(z.void(), z.array(OutboxItemSchema)),
+  'outbox.cancel': defineChannel(z.object({ id: z.string() }), DraftSchema.nullable()),
+  'outbox.retry': defineChannel(z.object({ id: z.string() }), z.void()),
+  'identities.list': defineChannel(z.object({ accountId: z.string().optional() }), z.array(IdentitySchema)),
+  'identities.create': defineChannel(
+    z.object({ accountId: z.string(), email: z.string().email(), name: z.string(), signatureId: z.string().nullable().optional(), replyTo: z.string().nullable().optional(), isDefault: z.boolean().optional() }),
+    IdentitySchema
+  ),
+  'identities.update': defineChannel(
+    z.object({ id: z.string(), patch: z.object({ email: z.string().email().optional(), name: z.string().optional(), signatureId: z.string().nullable().optional(), replyTo: z.string().nullable().optional(), isDefault: z.boolean().optional() }) }),
+    z.void()
+  ),
+  'identities.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+  'signatures.list': defineChannel(z.void(), z.array(SignatureSchema)),
+  'signatures.save': defineChannel(z.object({ id: z.string().optional(), name: z.string(), html: z.string(), text: z.string() }), SignatureSchema),
+  'signatures.delete': defineChannel(z.object({ id: z.string() }), z.void())
 } as const
 
 export type Channels = typeof channels
@@ -112,7 +139,10 @@ export const events = {
   'folders.changed': z.object({ accountId: z.string() }),
   'messages.changed': z.object({ accountId: z.string(), folderId: z.string() }),
   'messages.new': z.object({ accountId: z.string(), folderId: z.string(), ids: z.array(z.string()) }),
-  'messages.bodyFetched': z.object({ id: z.string() })
+  'messages.bodyFetched': z.object({ id: z.string() }),
+  'outbox.changed': z.void(),
+  'outbox.sent': z.object({ id: z.string() }),
+  'outbox.failed': z.object({ id: z.string(), error: z.string() })
 } as const
 
 export type Events = typeof events

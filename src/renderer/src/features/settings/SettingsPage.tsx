@@ -3,9 +3,11 @@ import { ArrowLeft } from 'lucide-react'
 import { cn } from '@renderer/components/ui'
 import { AccountsSettings } from './AccountsSettings'
 import { GeneralSettings } from './GeneralSettings'
+import { IdentitiesSettings } from './IdentitiesSettings'
 
 const SECTIONS = [
   { id: 'accounts', label: 'Accounts' },
+  { id: 'identities', label: 'Identities & signatures' },
   { id: 'general', label: 'General' }
 ] as const
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -29,6 +31,7 @@ export function SettingsPage({ onBack, initial = 'accounts' }: { onBack: () => v
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-3xl">
           {section === 'accounts' && <AccountsSettings />}
+          {section === 'identities' && <IdentitiesSettings />}
           {section === 'general' && <GeneralSettings />}
         </div>
       </div>
