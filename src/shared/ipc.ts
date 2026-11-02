@@ -95,6 +95,22 @@ export const AgentSessionSchema = z.object({
   updatedAt: z.string()
 })
 
+export const AccountDetailSchema = z.object({
+  id: z.string(),
+  type: AccountTypeSchema,
+  email: z.string(),
+  displayName: z.string(),
+  color: z.string(),
+  enabled: z.boolean(),
+  authType: z.enum(['oauth2', 'password']),
+  oauthProvider: z.enum(['google', 'microsoft']).nullable(),
+  imap: ServerConfigSchema,
+  smtp: ServerConfigSchema,
+  syncSettings: z.object({ initialWindowDays: z.number().optional() }).passthrough(),
+  lastError: z.string().nullable(),
+  lastSyncAt: z.string().nullable()
+})
+
 export const channels = {
   'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string() })),
   'app.openExternal': defineChannel(z.object({ url: z.string().url() }), z.void()),
@@ -106,13 +122,25 @@ export const channels = {
   'accounts.discover': defineChannel(z.object({ email: z.string().email() }), DiscoveryResultSchema),
   'accounts.test': defineChannel(CreateAccountRequestSchema, ConnectionTestResultSchema),
   'accounts.create': defineChannel(CreateAccountRequestSchema, AccountSummarySchema),
+  'accounts.get': defineChannel(z.object({ id: z.string() }), AccountDetailSchema),
   'accounts.update': defineChannel(
     z.object({
       id: z.string(),
-      patch: z.object({ displayName: z.string().optional(), color: z.string().optional(), enabled: z.boolean().optional(), sortOrder: z.number().int().optional() })
+      patch: z.object({
+        displayName: z.string().optional(),
+        color: z.string().optional(),
+        enabled: z.boolean().optional(),
+        imap: ServerConfigSchema.optional(),
+        smtp: ServerConfigSchema.optional(),
+        syncSettings: z.object({ initialWindowDays: z.number().int().min(7).max(3650).optional() }).optional()
+      })
     }),
     z.void()
   ),
+  'accounts.setPassword': defineChannel(z.object({ id: z.string(), password: z.string().min(1) }), z.void()),
+  'accounts.reauth': defineChannel(z.object({ id: z.string(), ticket: z.string() }), z.void()),
+  'accounts.testExisting': defineChannel(z.object({ id: z.string() }), ConnectionTestResultSchema),
+  'accounts.reorder': defineChannel(z.object({ ids: z.array(z.string()) }), z.void()),
   'accounts.remove': defineChannel(z.object({ id: z.string() }), z.void()),
 
   'oauth.start': defineChannel(z.object({ provider: z.enum(['google', 'microsoft']), loginHint: z.string().optional() }), OAuthStartResultSchema),
@@ -121,6 +149,13 @@ export const channels = {
 
   'folders.list': defineChannel(z.object({ accountId: z.string().optional() }), z.array(FolderSchema)),
   'folders.sync': defineChannel(z.object({ accountId: z.string(), folderId: z.string() }), z.void()),
+  'folders.create': defineChannel(z.object({ accountId: z.string(), name: z.string().min(1), parentId: z.string().nullable().optional() }), z.void()),
+  'folders.rename': defineChannel(z.object({ id: z.string(), name: z.string().min(1) }), z.void()),
+  'folders.delete': defineChannel(z.object({ id: z.string() }), z.void()),
+  'folders.markAllRead': defineChannel(z.object({ id: z.string() }), z.object({ count: z.number() })),
+  'folders.empty': defineChannel(z.object({ id: z.string() }), z.object({ count: z.number() })),
+  'messages.source': defineChannel(z.object({ id: z.string() }), z.object({ path: z.string(), text: z.string() }).nullable()),
+  'messages.saveSource': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), path: z.string().optional() })),
 
   'messages.list': defineChannel(ListMessagesQuerySchema, z.array(MessageListItemSchema)),
   'messages.thread': defineChannel(z.object({ threadId: z.string() }), z.array(MessageListItemSchema)),

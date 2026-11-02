@@ -12,6 +12,12 @@ interface UiState {
   selectedMessageId: string | null
   selectedIds: string[]
   settingsOpen: boolean
+  /** Overlays shared across panes. */
+  editAccount: { id: string; tab: 'general' | 'servers' | 'signin' } | null
+  sourceMessageId: string | null
+  openEditAccount(id: string, tab?: 'general' | 'servers' | 'signin'): void
+  closeEditAccount(): void
+  setSourceMessageId(id: string | null): void
   setMailbox(sel: MailboxSelection): void
   selectMessage(id: string | null, opts?: { toggle?: boolean; range?: string[] }): void
   clearSelection(): void
@@ -23,6 +29,11 @@ export const useUi = create<UiState>((set) => ({
   selectedMessageId: null,
   selectedIds: [],
   settingsOpen: false,
+  editAccount: null,
+  sourceMessageId: null,
+  openEditAccount: (id, tab = 'general') => set({ editAccount: { id, tab } }),
+  closeEditAccount: () => set({ editAccount: null }),
+  setSourceMessageId: (sourceMessageId) => set({ sourceMessageId }),
   setMailbox: (mailbox) => set({ mailbox, selectedMessageId: null, selectedIds: [] }),
   selectMessage: (id, opts) =>
     set((s) => {

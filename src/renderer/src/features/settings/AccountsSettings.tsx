@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, Field, Input, Alert } from '@renderer/components/ui'
 import { AddAccountDialog } from '@renderer/features/accounts/AddAccountDialog'
+import { EditAccountDialog, type EditTab } from '@renderer/features/accounts/EditAccountDialog'
+import { confirmDialog } from '@renderer/components/dialogs'
 import type { OAuthClientConfig } from '@shared/schemas/oauth'
 
 export function AccountsSettings() {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; tab: EditTab } | null>(null)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
   const remove = useMutation({
     mutationFn: (id: string) => invoke('accounts.remove', { id }),
@@ -35,7 +38,22 @@ export function AccountsSettings() {
                   {a.lastError && <span className="ml-2 text-danger">{a.lastError}</span>}
                 </div>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => confirm(`Remove ${a.email}? Local cache for this account will be deleted.`) && remove.mutate(a.id)} aria-label="Remove">
+              {a.lastError && (
+                <Button size="sm" variant="danger" onClick={() => setEditing({ id: a.id, tab: 'signin' })}>
+                  Fix sign-in
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setEditing({ id: a.id, tab: 'general' })} aria-label="Edit">
+                <Pencil className="size-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  if (await confirmDialog({ title: `Remove ${a.email}?`, message: 'The local cache for this account is deleted. Nothing is removed from the server.', okLabel: 'Remove', danger: true })) remove.mutate(a.id)
+                }}
+                aria-label="Remove"
+              >
                 <Trash2 className="size-3.5" />
               </Button>
             </div>
@@ -46,6 +64,7 @@ export function AccountsSettings() {
 
       <OAuthClientsSection />
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
+      <EditAccountDialog accountId={editing?.id ?? null} initialTab={editing?.tab} onClose={() => setEditing(null)} />
     </div>
   )
 }

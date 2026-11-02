@@ -87,6 +87,10 @@ export class FakeImapProvider extends ImapProvider {
   override async *fetchFlags(range: string) {
     for (const m of this.range(range)) yield { uid: m.uid, flags: new Set(m.flags), labels: undefined, modseq: this.open_!.modseq }
   }
+  override async fetchSource(uid: number) {
+    const m = this.open_!.messages.get(uid)
+    return m ? Buffer.from(`From: ${m.from}\r\nTo: me@test\r\nSubject: ${m.subject}\r\nMessage-ID: ${m.messageId}\r\n\r\n${m.body ?? ''}`) : null
+  }
   override async fetchParsed(uid: number) {
     const m = this.open_!.messages.get(uid)
     if (!m) return null
@@ -125,6 +129,25 @@ export class FakeImapProvider extends ImapProvider {
     this.ops.push(`append ${path}`)
     const subject = mime.toString().match(/^Subject: (.*)$/m)?.[1] ?? ''
     return this.box(path).add({ subject, from: 'me@test', date: new Date(), flags, body: '' }).uid
+  }
+  override async createFolder(path: string) {
+    this.ops.push(`createFolder ${path}`)
+    if (this.mailboxes.has(path)) throw new Error('ALREADYEXISTS')
+    this.mailboxes.set(path, new FakeMailbox(path))
+  }
+  override async renameFolder(path: string, newPath: string) {
+    this.ops.push(`renameFolder ${path} -> ${newPath}`)
+    const b = this.box(path)
+    this.mailboxes.delete(path)
+    const nb = new FakeMailbox(newPath)
+    nb.messages = b.messages
+    nb.uidNext = b.uidNext
+    this.mailboxes.set(newPath, nb)
+  }
+  override async deleteFolder(path: string) {
+    this.ops.push(`deleteFolder ${path}`)
+    this.box(path)
+    this.mailboxes.delete(path)
   }
   override async idle() {}
   override async noop() {}

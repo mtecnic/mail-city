@@ -3,7 +3,7 @@ import { Sidebar } from './Sidebar'
 import { MessageList } from './MessageList'
 import { ReadingPane } from './ReadingPane'
 import { useUi } from '@renderer/store/ui'
-import { useMailActions, useFolders } from './hooks'
+import { useMailActions, useFolders, useMessageList } from './hooks'
 import { AddAccountDialog } from '@renderer/features/accounts/AddAccountDialog'
 import { ComposeDock } from '@renderer/features/compose/ComposeWindow'
 import { OutboxView, UndoSendToast } from '@renderer/features/compose/OutboxView'
@@ -13,6 +13,11 @@ import { AppEvents, UpdateBanner } from '@renderer/features/app/AppEvents'
 import { Welcome, ShortcutHelp } from '@renderer/features/app/Welcome'
 import { AssistantPanel } from '@renderer/features/ai/AssistantPanel'
 import { AskMailCard } from '@renderer/features/ai/AskMail'
+import { EditAccountDialog } from '@renderer/features/accounts/EditAccountDialog'
+import { SourceDialog } from './SourceDialog'
+import { useMessageMenuDeps } from './MessageList'
+import { messageMenu } from './menus'
+import { useContextMenu } from '@renderer/components/ContextMenu'
 import { useQuery } from '@tanstack/react-query'
 import { invoke } from '@renderer/lib/api'
 
@@ -21,8 +26,11 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const [help, setHelp] = useState(false)
   const [assistant, setAssistant] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
-  const { mailbox, selectedMessageId, selectedIds, selectMessage } = useUi()
+  const { mailbox, selectedMessageId, selectedIds, selectMessage, editAccount, closeEditAccount, sourceMessageId, setSourceMessageId } = useUi()
   const actions = useMailActions()
+  const deps = useMessageMenuDeps()
+  const menu = useContextMenu()
+  const list = useMessageList(mailbox)
   const compose = useComposeActions()
   const folders = useFolders()
 
@@ -43,7 +51,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
         setAssistant((a) => !a)
         return
       }
-      if (target.closest('input, textarea, select, [contenteditable="true"], .ProseMirror') || e.ctrlKey || e.metaKey || e.altKey) return
+      if (target.closest('input, textarea, select, [contenteditable="true"], .ProseMirror, [data-ctx-menu]') || e.ctrlKey || e.metaKey || e.altKey) return
       if (e.key === 'c') {
         e.preventDefault()
         void compose.newMessage()
@@ -70,6 +78,25 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
         case 'u':
           actions.setFlags.mutate({ ids, flags: { seen: false } })
           break
+        case 'I':
+          actions.setFlags.mutate({ ids, flags: { seen: true } })
+          break
+        case 'x':
+          if (selectedMessageId) selectMessage(selectedMessageId, { toggle: true })
+          break
+        case '!':
+          deps.actions.junk({ ids, junk: true })
+          break
+        case 'v':
+        case 'z': {
+          const items = (list.data?.pages.flat() ?? []).filter((m) => ids.includes(m.id))
+          const all = messageMenu(items, deps)
+          const sub = all.find((i) => 'label' in i && i.label === (e.key === 'v' ? 'Move to…' : 'Snooze…')) as { submenu?: unknown } | undefined
+          const items2 = sub && typeof sub.submenu === 'function' ? (sub.submenu as () => never[])() : ((sub?.submenu as never[]) ?? [])
+          const anchor = document.querySelector('[data-index]') as HTMLElement | null
+          if (items2.length) menu.open({ clientX: anchor ? anchor.getBoundingClientRect().right : 400, clientY: anchor ? anchor.getBoundingClientRect().top : 120 }, items2)
+          break
+        }
         case 'r':
           if (selectedMessageId) void compose.reply(selectedMessageId, 'reply')
           break
@@ -89,7 +116,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [selectedIds, selectedMessageId, actions, selectMessage, compose])
+  }, [selectedIds, selectedMessageId, actions, selectMessage, compose, deps, list.data, menu])
 
   return (
     <div className="flex h-screen w-screen flex-col">
@@ -121,6 +148,8 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       </div>
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />
+      <EditAccountDialog accountId={editAccount?.id ?? null} initialTab={editAccount?.tab} onClose={closeEditAccount} />
+      <SourceDialog messageId={sourceMessageId} onClose={() => setSourceMessageId(null)} />
       <ComposeDock />
       <UndoSendToast />
     </div>

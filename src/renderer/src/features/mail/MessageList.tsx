@@ -1,16 +1,67 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Paperclip, Star } from 'lucide-react'
-import { cn, Spinner } from '@renderer/components/ui'
+import { Archive, AlertOctagon, FolderInput, MailOpen, Paperclip, Star, Trash2, X } from 'lucide-react'
+import { invoke } from '@renderer/lib/api'
+import { Button, cn, Spinner } from '@renderer/components/ui'
+import { useContextMenu } from '@renderer/components/ContextMenu'
 import { useUi } from '@renderer/store/ui'
 import { formatListDate, initials, avatarColor } from '@renderer/lib/format'
-import { useMessageList, useMailActions } from './hooks'
+import { useComposeActions } from '@renderer/features/compose/useComposeActions'
+import { useMessageList, useMailActions, useFolders } from './hooks'
+import { messageMenu, type MessageMenuDeps } from './menus'
+import { DND_TYPE } from './Sidebar'
 import type { MessageListItem } from '@shared/schemas/mail'
 
+/** Everything the message menu / shortcuts need, shared by list, reading pane and MailView. */
+export function useMessageMenuDeps(): MessageMenuDeps {
+  const qc = useQueryClient()
+  const folders = useFolders()
+  const actions = useMailActions()
+  const compose = useComposeActions()
+  const { selectMessage, setSourceMessageId } = useUi()
+  const snooze = useMutation({
+    mutationFn: (v: { ids: string[]; until: Date }) => invoke('messages.snooze', { ids: v.ids, until: v.until.toISOString() }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['messages'] })
+      selectMessage(null)
+    }
+  })
+  const clear = (fn: (ids: string[]) => void) => (ids: string[]) => {
+    fn(ids)
+    selectMessage(null)
+  }
+  return useMemo(
+    () => ({
+      folders: folders.data ?? [],
+      actions: {
+        setFlags: (v) => actions.setFlags.mutate(v as never),
+        archive: clear((ids) => actions.archive.mutate(ids)),
+        del: clear((ids) => actions.del.mutate(ids)),
+        move: (v) => {
+          actions.move.mutate(v)
+          selectMessage(null)
+        },
+        junk: (v) => {
+          actions.junk.mutate(v)
+          selectMessage(null)
+        }
+      },
+      reply: (id, mode) => void compose.reply(id, mode),
+      snooze: (ids, until) => snooze.mutate({ ids, until }),
+      viewSource: (id) => setSourceMessageId(id),
+      open: (id) => selectMessage(id)
+    }),
+    [folders.data, actions.setFlags, actions.archive, actions.del, actions.move, actions.junk, compose, snooze, selectMessage, setSourceMessageId]
+  )
+}
+
 export function MessageList() {
-  const { mailbox, selectedMessageId, selectedIds, selectMessage } = useUi()
+  const { mailbox, selectedMessageId, selectedIds, selectMessage, clearSelection } = useUi()
   const q = useMessageList(mailbox)
   const actions = useMailActions()
+  const deps = useMessageMenuDeps()
+  const menu = useContextMenu()
   const items = useMemo(() => q.data?.pages.flat() ?? [], [q.data])
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -27,14 +78,20 @@ export function MessageList() {
     if (last && last.index >= items.length - 1 && q.hasNextPage && !q.isFetchingNextPage) void q.fetchNextPage()
   }, [vItems, items.length, q])
 
-  // Keyboard navigation inside the list.
+  const selected = items.filter((m) => selectedIds.includes(m.id))
+  const openMenuFor = (e: React.MouseEvent, m: MessageListItem) => {
+    const target = selectedIds.includes(m.id) && selectedIds.length > 1 ? selected : [m]
+    if (!selectedIds.includes(m.id)) selectMessage(m.id)
+    menu.open(e, messageMenu(target, deps))
+  }
+
   const onKey = (e: React.KeyboardEvent) => {
     const idx = items.findIndex((m) => m.id === selectedMessageId)
     if (e.key === 'j' || e.key === 'ArrowDown') {
       e.preventDefault()
       const next = items[Math.min(items.length - 1, idx + 1)]
       if (next) {
-        selectMessage(next.id)
+        selectMessage(next.id, e.shiftKey ? { range: items.slice(Math.min(idx, idx + 1), Math.max(idx, idx + 1) + 1).map((x) => x.id).concat(selectedIds) } : undefined)
         rowVirtualizer.scrollToIndex(Math.min(items.length - 1, idx + 1))
       }
     } else if (e.key === 'k' || e.key === 'ArrowUp') {
@@ -56,46 +113,101 @@ export function MessageList() {
   }
   if (!items.length) return <div className="flex flex-1 items-center justify-center text-sm text-muted">{q.isError ? q.error.message : 'Nothing here.'}</div>
 
+  const allSelected = items.length > 0 && selectedIds.length >= items.length
+  const ids = selectedIds
+
   return (
-    <div ref={parentRef} className="h-full flex-1 overflow-y-auto outline-none" tabIndex={0} onKeyDown={onKey}>
-      <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
-        {vItems.map((v) => {
-          const m = items[v.index]
-          return (
-            <div key={v.key} data-index={v.index} ref={rowVirtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${v.start}px)` }}>
-              {m ? (
-                <Row
-                  m={m}
-                  active={m.id === selectedMessageId}
-                  checked={selectedIds.includes(m.id)}
-                  onClick={(e) => {
-                    if (e.ctrlKey || e.metaKey) selectMessage(m.id, { toggle: true })
-                    else if (e.shiftKey && selectedMessageId) {
-                      const a = items.findIndex((x) => x.id === selectedMessageId)
-                      const b = v.index
-                      selectMessage(m.id, { range: items.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.id) })
-                    } else selectMessage(m.id)
-                  }}
-                  onStar={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })}
-                />
-              ) : (
-                <div className="flex h-12 items-center justify-center">
-                  <Spinner />
-                </div>
-              )}
-            </div>
-          )
-        })}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-8 items-center gap-2 border-b border-border px-3 text-xs">
+        <input type="checkbox" checked={allSelected} onChange={(e) => (e.target.checked ? selectMessage(items[0]!.id, { range: items.map((m) => m.id) }) : clearSelection())} title="Select all loaded" />
+        {ids.length > 1 ? (
+          <>
+            <span className="text-muted">{ids.length} selected</span>
+            <span className="ml-auto flex items-center gap-0.5">
+              <Button size="sm" variant="ghost" title="Mark read" onClick={() => actions.setFlags.mutate({ ids, flags: { seen: true } })}>
+                <MailOpen className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" title="Archive" onClick={() => deps.actions.archive(ids)}>
+                <Archive className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" title="Move to…" onClick={(e) => menu.openAt(e.currentTarget, messageMenu(selected, deps).filter((i) => 'label' in i && i.label === 'Move to…'))}>
+                <FolderInput className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" title="Junk" onClick={() => deps.actions.junk({ ids, junk: true })}>
+                <AlertOctagon className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" title="Delete" onClick={() => deps.actions.del(ids)}>
+                <Trash2 className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" title="Clear selection" onClick={clearSelection}>
+                <X className="size-3.5" />
+              </Button>
+            </span>
+          </>
+        ) : (
+          <span className="text-muted">{items.length}{q.hasNextPage ? '+' : ''} messages</span>
+        )}
+      </div>
+      <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto outline-none" tabIndex={0} onKeyDown={onKey}>
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+          {vItems.map((v) => {
+            const m = items[v.index]
+            return (
+              <div key={v.key} data-index={v.index} ref={rowVirtualizer.measureElement} className="absolute left-0 top-0 w-full" style={{ transform: `translateY(${v.start}px)` }}>
+                {m ? (
+                  <Row
+                    m={m}
+                    active={m.id === selectedMessageId}
+                    checked={selectedIds.includes(m.id)}
+                    onClick={(e) => {
+                      if (e.ctrlKey || e.metaKey) selectMessage(m.id, { toggle: true })
+                      else if (e.shiftKey && selectedMessageId) {
+                        const a = items.findIndex((x) => x.id === selectedMessageId)
+                        const b = v.index
+                        selectMessage(m.id, { range: items.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.id) })
+                      } else selectMessage(m.id)
+                    }}
+                    onContextMenu={(e) => openMenuFor(e, m)}
+                    onToggle={() => selectMessage(m.id, { toggle: true })}
+                    onStar={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })}
+                    dragIds={selectedIds.includes(m.id) ? selectedIds : [m.id]}
+                  />
+                ) : (
+                  <div className="flex h-12 items-center justify-center">
+                    <Spinner />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
 }
 
-function Row({ m, active, checked, onClick, onStar }: { m: MessageListItem; active: boolean; checked: boolean; onClick: (e: React.MouseEvent) => void; onStar: () => void }) {
+function Row({ m, active, checked, onClick, onContextMenu, onToggle, onStar, dragIds }: { m: MessageListItem; active: boolean; checked: boolean; onClick: (e: React.MouseEvent) => void; onContextMenu: (e: React.MouseEvent) => void; onToggle: () => void; onStar: () => void; dragIds: string[] }) {
   const unread = !m.flags.seen
   const who = m.from.name || m.from.address
   return (
-    <div className={cn('group flex cursor-default gap-3 border-b border-border px-3 py-2 select-none', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')} onClick={onClick}>
+    <div
+      className={cn('group flex cursor-default gap-2 border-b border-border px-2 py-2 select-none', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DND_TYPE, JSON.stringify({ ids: dragIds, accountId: m.accountId }))
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+    >
+      <input
+        type="checkbox"
+        className={cn('mt-2.5 size-3.5 shrink-0', !checked && 'opacity-0 group-hover:opacity-100')}
+        checked={checked}
+        onClick={(e) => e.stopPropagation()}
+        onChange={onToggle}
+        aria-label="Select"
+      />
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: avatarColor(m.from.address) }}>
         {initials(m.from.name, m.from.address)}
       </div>

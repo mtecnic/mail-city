@@ -80,6 +80,11 @@ export class AccountStore extends TypedEmitter<{ changed: [] }> {
     this.emit('changed')
   }
 
+  reorder(ids: string[]): void {
+    ids.forEach((id, i) => this.db.update(accounts).set({ sortOrder: i }).where(eq(accounts.id, id)).run())
+    this.emit('changed')
+  }
+
   remove(id: string): void {
     this.db.delete(accounts).where(eq(accounts.id, id)).run() // cascades to everything
     this.emit('changed')

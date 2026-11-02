@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Archive, Download, Forward, ImageIcon, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2, AlertOctagon } from 'lucide-react'
+import { Archive, Download, Forward, ImageIcon, MailOpen, MoreHorizontal, Paperclip, Reply, ReplyAll, Star, Trash2, AlertOctagon } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, Spinner, cn } from '@renderer/components/ui'
 import { useUi } from '@renderer/store/ui'
@@ -9,11 +9,19 @@ import { sanitizeEmailHtml, textToHtml, wrapForFrame } from '@renderer/lib/sanit
 import { useMessage, useMailActions } from './hooks'
 import { SnoozeMenu } from './SnoozeMenu'
 import { MessageAiPanel } from '@renderer/features/ai/MessageAiPanel'
+import { useContextMenu } from '@renderer/components/ContextMenu'
+import { useMessageMenuDeps } from './MessageList'
+import { messageMenu } from './menus'
+import { useMessageList } from './hooks'
 import type { MessageDetail, Address } from '@shared/schemas/mail'
 
 export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'replyAll' | 'forward', m: MessageDetail) => void }) {
-  const { selectedMessageId, selectedIds, selectMessage } = useUi()
+  const { selectedMessageId, selectedIds, selectMessage, mailbox } = useUi()
   const q = useMessage(selectedMessageId)
+  const menu = useContextMenu()
+  const deps = useMessageMenuDeps()
+  const list = useMessageList(mailbox)
+  const listItem = list.data?.pages.flat().find((x) => x.id === selectedMessageId)
   const actions = useMailActions()
   const m = q.data
 
@@ -80,6 +88,9 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
           <MailOpen className="size-4" />
         </Button>
         <SnoozeMenu ids={[m.id]} />
+        <Button size="sm" variant="ghost" className="ml-auto" title="More actions" onClick={(e) => listItem && menu.openAt(e.currentTarget, messageMenu([listItem], deps))} onContextMenu={(e) => listItem && menu.open(e, messageMenu([listItem], deps))}>
+          <MoreHorizontal className="size-4" />
+        </Button>
       </div>
 
       <div className="border-b border-border px-5 py-3">
@@ -100,7 +111,9 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
         </div>
       </div>
 
-      <MessageAiPanel m={m} />
+      <div onContextMenu={(e) => listItem && menu.open(e, messageMenu([listItem], deps))}>
+        <MessageAiPanel m={m} />
+      </div>
       <Body m={m} />
 
       {m.attachments.filter((a) => !a.isInline).length > 0 && (
@@ -108,7 +121,17 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
           {m.attachments
             .filter((a) => !a.isInline)
             .map((a) => (
-              <div key={a.id} className="flex items-center gap-2 rounded-md border border-border bg-panel px-2 py-1 text-xs">
+              <div
+                key={a.id}
+                className="flex items-center gap-2 rounded-md border border-border bg-panel px-2 py-1 text-xs"
+                onContextMenu={(e) =>
+                  menu.open(e, [
+                    { label: 'Open', onSelect: () => void invoke('attachments.open', { id: a.id }) },
+                    { label: 'Save as…', onSelect: () => void invoke('attachments.saveAs', { id: a.id }) },
+                    ...(/^image\//.test(a.mimeType) ? [{ label: 'Copy image', onSelect: () => void copyImage(a.id) }] : [])
+                  ])
+                }
+              >
                 <Paperclip className="size-3.5 text-muted" />
                 <button className="max-w-56 truncate hover:underline" title={a.filename} onClick={() => invoke('attachments.open', { id: a.id })}>
                   {a.filename}
@@ -187,4 +210,15 @@ function Body({ m }: { m: MessageDetail }) {
       />
     </div>
   )
+}
+
+async function copyImage(attachmentId: string) {
+  const url = await invoke('attachments.dataUrl', { id: attachmentId })
+  if (!url) return
+  const blob = await (await fetch(url)).blob()
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+  } catch {
+    /* clipboard image unsupported */
+  }
 }

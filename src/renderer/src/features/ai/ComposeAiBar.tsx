@@ -58,7 +58,7 @@ export function ComposeAiBar({ editor, accountId, inReplyToMessageId }: { editor
     }
   })
 
-  if (!ai.data?.enabled) return null
+  if (!ai.data?.enabled || !ai.data.providers.some((p) => p.enabled)) return null
   const hasText = !!editor?.getText().trim()
   const btn = (mode: Mode, label: string, disabled = false) => (
     <Button size="sm" variant="ghost" disabled={disabled || run.isPending} onClick={() => run.mutate(mode)}>

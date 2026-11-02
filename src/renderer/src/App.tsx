@@ -4,6 +4,8 @@ import { useUi } from './store/ui'
 import { SettingsPage } from './features/settings/SettingsPage'
 import { MailView } from './features/mail/MailView'
 import { McpConfirmToasts } from './features/settings/McpSettings'
+import { ContextMenuHost } from './components/ContextMenu'
+import { DialogHost } from './components/dialogs'
 
 const ACCOUNT_KEYS = [['accounts.list']]
 
@@ -16,6 +18,8 @@ export function App() {
     <>
       {settingsOpen ? <SettingsPage onBack={() => setSettingsOpen(false)} /> : <MailView onSettings={() => setSettingsOpen(true)} />}
       <McpConfirmToasts />
+      <ContextMenuHost />
+      <DialogHost />
     </>
   )
 }

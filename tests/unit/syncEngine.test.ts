@@ -110,4 +110,49 @@ describe('AccountSyncer with a fake IMAP server', () => {
     expect(k.store.getFolder(inboxF.id)!.uidValidity).toBe(2)
     expect(k.store.list({ folderId: inboxF.id })).toHaveLength(2)
   })
+
+  it('creates, renames, deletes folders and marks all read / empties trash through the op queue', async () => {
+    const s = setup()
+    k = s.k
+    await s.syncer.tick()
+    k.folders.create(s.acct.id, 'Receipts')
+    await s.syncer.tick()
+    const receipts = k.store.folderByPath(s.acct.id, 'Receipts')!
+    expect(receipts).toBeTruthy()
+    k.folders.rename(receipts.id, 'Invoices')
+    await s.syncer.tick()
+    expect(k.store.folderByPath(s.acct.id, 'Invoices')).toBeTruthy()
+    expect(k.store.folderByPath(s.acct.id, 'Receipts')).toBeUndefined()
+    expect(() => k.folders.delete(k.store.folderBySpecialUse(s.acct.id, 'inbox')!.id)).toThrow(/System folders/)
+    k.folders.delete(k.store.folderByPath(s.acct.id, 'Invoices')!.id)
+    await s.syncer.tick()
+    expect(s.fake.mailboxes.has('Invoices')).toBe(false)
+
+    const inboxF = k.store.folderBySpecialUse(s.acct.id, 'inbox')!
+    expect(k.folders.markAllRead(inboxF.id)).toBe(1)
+    expect(k.store.getFolder(inboxF.id)!.unreadCount).toBe(0)
+    await s.syncer.tick()
+    expect(s.fake.ops).toContain('addFlags 2 \\Seen')
+
+    const trash = k.store.folderBySpecialUse(s.acct.id, 'trash')!
+    const hello = k.store.list({ folderId: inboxF.id }).find((m) => m.subject === 'Hello')!
+    k.mail.delete([hello.id])
+    await s.syncer.tick()
+    expect(k.store.list({ folderId: trash.id })).toHaveLength(1)
+    expect(k.folders.empty(trash.id)).toBe(1)
+    await s.syncer.tick()
+    expect(s.fake.box('Trash').messages.size).toBe(0)
+    expect(() => k.folders.empty(inboxF.id)).toThrow(/Only Trash/)
+  })
+
+  it('fetches raw message source on demand', async () => {
+    const s = setup()
+    k = s.k
+    await s.syncer.tick()
+    const inboxF = k.store.folderBySpecialUse(s.acct.id, 'inbox')!
+    const hello = k.store.list({ folderId: inboxF.id }).find((m) => m.subject === 'Hello')!
+    const p = s.syncer.fetchSource(hello.id)
+    await s.syncer.tick()
+    expect((await p)?.toString()).toMatch(/^From: b@x/m)
+  })
 })
