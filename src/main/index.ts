@@ -1,4 +1,4 @@
-import { app, BrowserWindow, safeStorage } from 'electron'
+import { app, BrowserWindow, safeStorage, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { join } from 'node:path'
@@ -52,7 +52,16 @@ if (!app.requestSingleInstanceLock()) {
     const dataDir = join(app.getPath('userData'), 'data')
     mkdirSync(dataDir, { recursive: true })
 
-    kernel = new Kernel({ dataDir, cipher: electronCipher(safeStorage) })
+    kernel = new Kernel({
+      dataDir,
+      cipher: electronCipher(safeStorage),
+      openUrl: (url) => shell.openExternal(url),
+      oauthDefaults: {
+        googleClientId: import.meta.env.MAIN_VITE_GOOGLE_CLIENT_ID,
+        googleClientSecret: import.meta.env.MAIN_VITE_GOOGLE_CLIENT_SECRET,
+        microsoftClientId: import.meta.env.MAIN_VITE_MS_CLIENT_ID
+      }
+    })
     registerIpc(kernel)
 
     createMainWindow()

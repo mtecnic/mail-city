@@ -10,11 +10,44 @@
  */
 import { z } from 'zod'
 import { AppSettingsSchema } from './schemas/settings'
-import { AccountSummarySchema } from './schemas/account'
+import { AccountSummarySchema, AccountTypeSchema, ServerConfigSchema } from './schemas/account'
+import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth'
 
 export function defineChannel<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(input: I, output: O) {
   return { input, output }
 }
+
+export const DiscoveryResultSchema = z.object({
+  email: z.string(),
+  domain: z.string(),
+  type: AccountTypeSchema,
+  providerLabel: z.string(),
+  source: z.enum(['known', 'mx', 'ispdb', 'autoconfig', 'srv', 'guess', 'none']),
+  imap: ServerConfigSchema.optional(),
+  smtp: ServerConfigSchema.optional(),
+  username: z.string(),
+  auth: z.enum(['oauth2', 'password']),
+  oauthProvider: z.enum(['google', 'microsoft']).optional(),
+  passwordHint: z.string().optional(),
+  helpUrl: z.string().optional()
+})
+
+export const CreateAccountRequestSchema = z.object({
+  type: AccountTypeSchema,
+  email: z.string().email(),
+  displayName: z.string(),
+  imap: ServerConfigSchema,
+  smtp: ServerConfigSchema,
+  auth: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('password'), password: z.string().min(1) }),
+    z.object({ type: z.literal('oauth2'), ticket: z.string().min(1) })
+  ])
+})
+
+export const ConnectionTestResultSchema = z.object({
+  imap: z.object({ ok: z.boolean(), error: z.string().optional(), capabilities: z.array(z.string()).optional() }),
+  smtp: z.object({ ok: z.boolean(), error: z.string().optional() })
+})
 
 export const channels = {
   'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string() })),
@@ -23,12 +56,29 @@ export const channels = {
   'settings.get': defineChannel(z.void(), AppSettingsSchema),
   'settings.set': defineChannel(z.record(z.string(), z.unknown()), AppSettingsSchema),
 
-  'accounts.list': defineChannel(z.void(), z.array(AccountSummarySchema))
+  'accounts.list': defineChannel(z.void(), z.array(AccountSummarySchema)),
+  'accounts.discover': defineChannel(z.object({ email: z.string().email() }), DiscoveryResultSchema),
+  'accounts.test': defineChannel(CreateAccountRequestSchema, ConnectionTestResultSchema),
+  'accounts.create': defineChannel(CreateAccountRequestSchema, AccountSummarySchema),
+  'accounts.update': defineChannel(
+    z.object({
+      id: z.string(),
+      patch: z.object({ displayName: z.string().optional(), color: z.string().optional(), enabled: z.boolean().optional(), sortOrder: z.number().int().optional() })
+    }),
+    z.void()
+  ),
+  'accounts.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+
+  'oauth.start': defineChannel(z.object({ provider: z.enum(['google', 'microsoft']), loginHint: z.string().optional() }), OAuthStartResultSchema),
+  'oauth.config.get': defineChannel(z.void(), z.object({ user: OAuthClientConfigSchema, hasGoogle: z.boolean(), hasMicrosoft: z.boolean() })),
+  'oauth.config.set': defineChannel(OAuthClientConfigSchema, z.void())
 } as const
 
 export type Channels = typeof channels
 export type ChannelName = keyof Channels
 export type ChannelInput<C extends ChannelName> = z.input<Channels[C]['input']>
+/** What a main-process handler receives: the input after zod parsing (defaults applied). */
+export type ChannelParsedInput<C extends ChannelName> = z.output<Channels[C]['input']>
 export type ChannelOutput<C extends ChannelName> = z.output<Channels[C]['output']>
 
 export const events = {
@@ -37,7 +87,8 @@ export const events = {
     state: z.enum(['idle', 'syncing', 'error', 'offline']),
     detail: z.string().optional()
   }),
-  'settings.changed': AppSettingsSchema
+  'settings.changed': AppSettingsSchema,
+  'accounts.changed': z.void()
 } as const
 
 export type Events = typeof events

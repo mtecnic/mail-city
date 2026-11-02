@@ -15,4 +15,14 @@ export function registerIpc(kernel: Kernel): void {
   kernel.settings.on('changed', (s) => emit('settings.changed', s))
 
   handle('accounts.list', () => kernel.accounts.list())
+  handle('accounts.discover', ({ email }) => kernel.discover(email))
+  handle('accounts.test', (req) => kernel.testAccount(req))
+  handle('accounts.create', (req) => kernel.createAccount(req))
+  handle('accounts.update', ({ id, patch }) => kernel.accounts.update(id, patch))
+  handle('accounts.remove', ({ id }) => kernel.accounts.remove(id))
+  kernel.accounts.on('changed', () => emit('accounts.changed', undefined))
+
+  handle('oauth.start', ({ provider, loginHint }) => kernel.oauth.start(provider, loginHint))
+  handle('oauth.config.get', () => ({ user: kernel.oauthConfig.getUserConfig(), hasGoogle: kernel.oauthConfig.hasGoogle(), hasMicrosoft: kernel.oauthConfig.hasMicrosoft() }))
+  handle('oauth.config.set', (cfg) => kernel.oauthConfig.setUserConfig(cfg))
 }

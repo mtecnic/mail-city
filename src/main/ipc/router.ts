@@ -1,10 +1,10 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { channels, events, type ChannelName, type ChannelInput, type ChannelOutput, type EventName, type EventPayload } from '@shared/ipc'
+import { channels, events, type ChannelName, type ChannelParsedInput, type ChannelOutput, type EventName, type EventPayload } from '@shared/ipc'
 import { createLogger } from '@kernel/utils/logger'
 
 const log = createLogger('ipc')
 
-type Handler<C extends ChannelName> = (input: ChannelInput<C>, ctx: { senderId: number }) => Promise<ChannelOutput<C>> | ChannelOutput<C>
+type Handler<C extends ChannelName> = (input: ChannelParsedInput<C>, ctx: { senderId: number }) => Promise<ChannelOutput<C>> | ChannelOutput<C>
 
 const registered = new Set<string>()
 
@@ -20,7 +20,7 @@ export function handle<C extends ChannelName>(channel: C, handler: Handler<C>): 
       throw new Error(`Invalid input for ${channel}: ${parsed.error.issues.map((i) => i.message).join('; ')}`)
     }
     try {
-      const result = await handler(parsed.data as ChannelInput<C>, { senderId: event.sender.id })
+      const result = await handler(parsed.data as ChannelParsedInput<C>, { senderId: event.sender.id })
       return def.output.parse(result)
     } catch (e) {
       log.error(`handler failed on ${channel}`, e instanceof Error ? e.message : e)
