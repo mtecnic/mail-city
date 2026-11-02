@@ -77,6 +77,23 @@ export const UpdateStatusSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('error'), message: z.string() })
 ])
 
+export const TranscriptEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('user'), text: z.string(), at: z.string() }),
+  z.object({ type: z.literal('assistant'), text: z.string(), at: z.string() }),
+  z.object({ type: z.literal('thinking'), text: z.string(), at: z.string() }),
+  z.object({ type: z.literal('tool_call'), id: z.string(), name: z.string(), input: z.unknown(), summary: z.string(), at: z.string() }),
+  z.object({ type: z.literal('tool_result'), id: z.string(), name: z.string(), ok: z.boolean(), text: z.string(), declined: z.boolean().optional(), at: z.string() }),
+  z.object({ type: z.literal('error'), text: z.string(), at: z.string() })
+])
+export const AgentSessionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  transcript: z.array(TranscriptEventSchema),
+  context: z.object({ accountId: z.string().optional(), messageId: z.string().optional(), threadId: z.string().optional() }),
+  createdAt: z.string(),
+  updatedAt: z.string()
+})
+
 export const channels = {
   'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string() })),
   'app.openExternal': defineChannel(z.object({ url: z.string().url() }), z.void()),
@@ -187,8 +204,45 @@ export const channels = {
   'ai.discoverLocal': defineChannel(z.object({ input: z.string(), apiKey: z.string().optional() }), z.array(LocalServerProbeSchema)),
   'ai.suggestRoutes': defineChannel(z.object({ providerId: z.string() }), z.partialRecord(AiFeatureSchema, z.object({ providerId: z.string(), model: z.string() }))),
   'ai.runs.list': defineChannel(z.object({ limit: z.number().int().optional() }), z.object({ runs: z.array(AiRunSchema), totals: z.object({ runs: z.number(), costUsd: z.number(), inputTokens: z.number(), outputTokens: z.number() }) })),
-  'ai.tools.list': defineChannel(z.void(), z.array(z.object({ name: z.string(), description: z.string(), risk: z.enum(['read', 'write', 'destructive']) })))
+  'ai.tools.list': defineChannel(z.void(), z.array(z.object({ name: z.string(), description: z.string(), risk: z.enum(['read', 'write', 'destructive']) }))),
+
+  // ---- AI features --------------------------------------------------------------
+  'ai.summarize': defineChannel(z.object({ messageId: z.string() }), z.object({ summary: z.string() })),
+  'ai.smartReplies': defineChannel(z.object({ messageId: z.string() }), z.array(z.string())),
+  'ai.extract': defineChannel(z.object({ messageId: z.string() }), z.unknown()),
+  'ai.extract.saveIcs': defineChannel(z.object({ messageId: z.string(), index: z.number().int() }), z.object({ ok: z.boolean(), path: z.string().optional() })),
+  'ai.draft': defineChannel(
+    z.object({
+      accountId: z.string(),
+      instruction: z.string().default(''),
+      draftText: z.string().optional(),
+      inReplyToMessageId: z.string().optional(),
+      mode: z.enum(['write', 'reply', 'rewrite', 'shorten', 'expand', 'formal', 'friendly', 'fix', 'translate']),
+      language: z.string().optional(),
+      streamId: z.string().optional()
+    }),
+    z.object({ text: z.string() })
+  ),
+  'ai.ruleFromText': defineChannel(z.object({ text: z.string(), accountId: z.string().optional() }), z.object({ rule: RuleInputSchema, explanation: z.string() })),
+  'ai.phishing': defineChannel(z.object({ messageId: z.string() }), z.object({ risk: z.enum(['low', 'medium', 'high']), reasons: z.array(z.string()), advice: z.string(), heuristics: z.array(z.string()) })),
+  'ai.unsubscribe.options': defineChannel(z.object({ messageId: z.string() }), z.array(z.object({ kind: z.enum(['one-click', 'mailto', 'link']), url: z.string(), to: z.string().optional(), subject: z.string().optional() }))),
+  'ai.unsubscribe.run': defineChannel(z.object({ messageId: z.string(), url: z.string() }), z.object({ ok: z.boolean(), method: z.string() })),
+  'ai.askMail': defineChannel(z.object({ question: z.string(), accountId: z.string().optional(), streamId: z.string().optional() }), z.object({ answer: z.string(), sources: z.array(z.object({ n: z.number(), id: z.string(), subject: z.string(), from: z.string(), date: z.string() })) })),
+  'ai.triage.backlog': defineChannel(z.void(), z.object({ triaged: z.number() })),
+  'ai.index.status': defineChannel(z.void(), z.object({ available: z.boolean(), model: z.string().nullable(), dimension: z.number().nullable(), indexed: z.number(), pending: z.number(), running: z.boolean(), lastError: z.string().nullable() })),
+  'ai.index.run': defineChannel(z.void(), z.object({ indexed: z.number() })),
+  'ai.semanticSearch': defineChannel(z.object({ query: z.string(), limit: z.number().int().optional() }), z.array(MessageListItemSchema)),
+
+  // ---- assistant sessions -----------------------------------------------------------
+  'agent.sessions.list': defineChannel(z.void(), z.array(z.object({ id: z.string(), title: z.string(), updatedAt: z.string() }))),
+  'agent.session.create': defineChannel(z.object({ accountId: z.string().optional(), messageId: z.string().optional(), threadId: z.string().optional() }), AgentSessionSchema),
+  'agent.session.get': defineChannel(z.object({ id: z.string() }), AgentSessionSchema.nullable()),
+  'agent.session.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+  'agent.send': defineChannel(z.object({ sessionId: z.string(), text: z.string().min(1) }), z.void()),
+  'agent.cancel': defineChannel(z.object({ sessionId: z.string() }), z.void()),
+  'agent.confirm': defineChannel(z.object({ id: z.string(), ok: z.boolean() }), z.void())
 } as const
+
 
 
 export type Channels = typeof channels
@@ -224,7 +278,14 @@ export const events = {
   'update.status': UpdateStatusSchema,
   'ai.settings.changed': AiSettingsSchema,
   'ai.pullProgress': z.object({ providerId: z.string(), model: z.string(), status: z.string(), completed: z.number().optional(), total: z.number().optional(), done: z.boolean().optional(), error: z.string().optional() }),
-  'drafts.created': z.object({ id: z.string() })
+  'drafts.created': z.object({ id: z.string() }),
+  'messages.triaged': z.object({ ids: z.array(z.string()) }),
+  'ai.stream': z.object({ streamId: z.string(), delta: z.discriminatedUnion('type', [z.object({ type: z.literal('text'), text: z.string() }), z.object({ type: z.literal('tool_start'), name: z.string() }), z.object({ type: z.literal('thinking'), text: z.string() })]) }),
+  'ai.index.progress': z.object({ indexed: z.number(), pending: z.number(), running: z.boolean(), lastError: z.string().nullable() }),
+  'agent.event': z.object({ sessionId: z.string(), event: TranscriptEventSchema }),
+  'agent.delta': z.object({ sessionId: z.string(), delta: z.discriminatedUnion('type', [z.object({ type: z.literal('text'), text: z.string() }), z.object({ type: z.literal('tool_start'), name: z.string() }), z.object({ type: z.literal('thinking'), text: z.string() })]) }),
+  'agent.done': z.object({ sessionId: z.string() }),
+  'agent.confirm': z.object({ sessionId: z.string(), id: z.string(), tool: z.string(), risk: z.string(), summary: z.string(), input: z.unknown() })
 } as const
 
 export type Events = typeof events

@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Play, Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, Field, Input, Select, Alert } from '@renderer/components/ui'
 import type { Rule, RuleAction, RuleCondition, RuleInput } from '@shared/schemas/rules'
+import { NlRuleInput } from '@renderer/features/ai/NlRuleInput'
 
 const FIELDS: [RuleCondition['field'], string][] = [
   ['from', 'From'],
@@ -79,6 +80,7 @@ export function RulesSettings() {
       </div>
       {applyResult && <Alert kind="success">{applyResult}</Alert>}
       <p className="text-xs text-muted">Rules run in order on new mail in the inbox. Actions are applied locally first and synced to the server.</p>
+      <NlRuleInput onDraft={(r) => setEditing(r)} />
 
       <div className="divide-y divide-border rounded-md border border-border">
         {rules.data?.map((r, i) => (

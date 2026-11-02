@@ -282,5 +282,24 @@ CREATE INDEX drafts_account ON drafts(account_id, updated_at);
 ALTER TABLE outbox ADD COLUMN draft_json TEXT;
 ALTER TABLE outbox ADD COLUMN reply_mode TEXT;
 `
+  },
+  {
+    version: 4,
+    name: 'ai_sessions',
+    sql: `
+CREATE TABLE ai_sessions (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
+  transcript_json TEXT NOT NULL DEFAULT '[]',
+  context_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE vector_index_state (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL
+);
+ALTER TABLE messages ADD COLUMN ai_extract_json TEXT;
+`
   }
 ]

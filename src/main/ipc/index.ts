@@ -5,6 +5,9 @@ import { readFile, copyFile } from 'node:fs/promises'
 import type { Kernel } from '@kernel/index'
 import type { AppSettingsPatch } from '@shared/schemas/settings'
 import type { AiSettingsPatch } from '@shared/schemas/ai'
+import type { StreamDelta } from '@kernel/ai/llm/types'
+import { summarizeThread, smartReplies, extractFromMessage, eventToIcs, draftEmail, ruleFromText, explainPhishing, localPhishingHeuristics, unsubscribeOptions, oneClickUnsubscribe } from '@kernel/ai/features'
+import { askMail } from '@kernel/ai/features/askMail'
 import { handle, emit } from './router'
 import { SavedSearchesSchema } from '@shared/ipc'
 
@@ -193,6 +196,80 @@ export function registerIpc(kernel: Kernel): void {
   handle('ai.suggestRoutes', ({ providerId }) => kernel.ai.suggestRoutes(providerId))
   handle('ai.runs.list', ({ limit }) => ({ runs: kernel.ai.runs(limit), totals: kernel.ai.runTotals() }))
   handle('ai.tools.list', () => kernel.tools.list().map((t) => ({ name: t.name, description: t.description, risk: t.risk })))
+  // ---- AI features ----------------------------------------------------------
+  const streamTo = (streamId?: string) => (streamId ? (delta: StreamDelta) => emit('ai.stream', { streamId, delta }) : undefined)
+  handle('ai.summarize', async ({ messageId }) => ({ summary: await summarizeThread(kernel, messageId) }))
+  handle('ai.smartReplies', ({ messageId }) => smartReplies(kernel, messageId))
+  handle('ai.extract', ({ messageId }) => extractFromMessage(kernel, messageId))
+  handle('ai.extract.saveIcs', async ({ messageId, index }) => {
+    const m = kernel.store.getMessage(messageId)
+    const ev = (m?.aiExtract as { events?: Parameters<typeof eventToIcs>[0][] } | null)?.events?.[index]
+    if (!ev) return { ok: false }
+    const r = await dialog.showSaveDialog({ defaultPath: `${ev.title.replace(/[\\/:*?"<>|]/g, '_')}.ics`, filters: [{ name: 'Calendar', extensions: ['ics'] }] })
+    if (r.canceled || !r.filePath) return { ok: false }
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(r.filePath, eventToIcs(ev, `${messageId}-${index}`), 'utf8')
+    return { ok: true, path: r.filePath }
+  })
+  handle('ai.draft', async ({ streamId, ...req }) => ({ text: await draftEmail(kernel, req, streamTo(streamId)) }))
+  handle('ai.ruleFromText', ({ text, accountId }) => ruleFromText(kernel, text, accountId))
+  handle('ai.phishing', async ({ messageId }) => {
+    const d = await kernel.mail.get(messageId)
+    const links = [...(d.textHtml ?? '').matchAll(/href="(https?:[^"]+)"/gi)].map((x) => x[1]!)
+    const heuristics = localPhishingHeuristics(d, links)
+    try {
+      return { ...(await explainPhishing(kernel, messageId)), heuristics }
+    } catch {
+      return { risk: (heuristics.length >= 2 ? 'medium' : 'low') as 'medium' | 'low', reasons: heuristics, advice: 'AI analysis unavailable; showing automated checks only.', heuristics }
+    }
+  })
+  handle('ai.unsubscribe.options', async ({ messageId }) => unsubscribeOptions(await kernel.mail.get(messageId)))
+  handle('ai.unsubscribe.run', async ({ messageId, url }) => {
+    const d = await kernel.mail.get(messageId)
+    const opt = unsubscribeOptions(d).find((o) => o.url === url)
+    if (!opt) return { ok: false, method: 'none' }
+    if (opt.kind === 'one-click') return { ok: await oneClickUnsubscribe(opt.url), method: 'one-click' }
+    if (opt.kind === 'mailto' && opt.to) {
+      const identity = kernel.identities.defaultFor(d.accountId)
+      const draft = kernel.drafts.save({ accountId: d.accountId, identityId: identity?.id ?? null, to: [{ name: '', address: opt.to }], subject: opt.subject ?? 'unsubscribe', html: '<p>unsubscribe</p>', text: 'unsubscribe' })
+      await kernel.outbox.send(draft)
+      return { ok: true, method: 'mailto' }
+    }
+    await shell.openExternal(opt.url)
+    return { ok: true, method: 'link' }
+  })
+  handle('ai.askMail', ({ question, accountId, streamId }) => askMail(kernel, question, { accountId }, streamTo(streamId)))
+  handle('ai.triage.backlog', async () => ({ triaged: await kernel.triage.backlog() }))
+  handle('ai.index.status', () => kernel.indexer.status())
+  handle('ai.index.run', async () => ({ indexed: await kernel.indexer.tick(64) }))
+  handle('ai.semanticSearch', ({ query, limit }) => kernel.indexer.hybrid(query, limit ?? 30))
+  kernel.indexer.on('progress', (s) => emit('ai.index.progress', { indexed: s.indexed, pending: s.pending, running: s.running, lastError: s.lastError }))
+  kernel.events.on('triaged', (ids) => {
+    emit('messages.triaged', { ids })
+    emit('messages.changed', { accountId: '', folderId: '' })
+  })
+
+  // ---- assistant --------------------------------------------------------------
+  handle('agent.sessions.list', () => kernel.agent.list())
+  handle('agent.session.create', (ctx) => {
+    const s = kernel.agent.create(ctx)
+    return { id: s.id, title: s.title, transcript: s.transcript, context: s.context, createdAt: s.createdAt, updatedAt: s.updatedAt }
+  })
+  handle('agent.session.get', ({ id }) => {
+    const s = kernel.agent.get(id)
+    return s ? { id: s.id, title: s.title, transcript: s.transcript, context: s.context, createdAt: s.createdAt, updatedAt: s.updatedAt } : null
+  })
+  handle('agent.session.remove', ({ id }) => kernel.agent.remove(id))
+  handle('agent.send', ({ sessionId, text }) => {
+    void kernel.agent.send(sessionId, text)
+  })
+  handle('agent.cancel', ({ sessionId }) => kernel.agent.cancel(sessionId))
+  handle('agent.confirm', ({ id, ok }) => kernel.agent.resolveConfirmation(id, ok))
+  kernel.agent.on('event', (sessionId, event) => emit('agent.event', { sessionId, event }))
+  kernel.agent.on('delta', (sessionId, delta) => emit('agent.delta', { sessionId, delta }))
+  kernel.agent.on('done', (sessionId) => emit('agent.done', { sessionId }))
+  kernel.agent.on('confirm', (sessionId, req) => emit('agent.confirm', { sessionId, ...req }))
+
   kernel.ai.on('changed', (s) => emit('ai.settings.changed', s))
   kernel.ai.on('pullProgress', (p) => emit('ai.pullProgress', p))
   kernel.events.on('draftCreated', (id) => emit('drafts.created', { id }))

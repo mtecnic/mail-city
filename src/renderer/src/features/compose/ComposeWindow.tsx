@@ -8,6 +8,7 @@ import { useCompose, type ComposerState } from '@renderer/store/compose'
 import { RecipientInput } from './RecipientInput'
 import { useComposeEditor, EditorToolbar, EditorContent } from './Editor'
 import type { DraftInput } from '@shared/schemas/compose'
+import { ComposeAiBar } from '@renderer/features/ai/ComposeAiBar'
 
 export function ComposeDock() {
   const composers = useCompose((s) => s.composers)
@@ -187,6 +188,7 @@ function ComposeWindow({ c }: { c: ComposerState }) {
         </div>
       )}
 
+      <ComposeAiBar editor={editor} accountId={c.accountId} inReplyToMessageId={c.inReplyToMessageId} />
       <EditorToolbar editor={editor} />
       {error && <div className="px-3 py-1 text-xs text-danger">{error}</div>}
       <div className="flex items-center gap-2 border-t border-border px-3 py-2">

@@ -129,6 +129,7 @@ export const messages = sqliteTable(
     aiCategory: text('ai_category'),
     aiPriority: integer('ai_priority'),
     aiSummary: text('ai_summary'),
+    aiExtract: json<unknown>('ai_extract_json'),
     indexState: text('index_state').notNull().default('none'), // none|fts|vec
     snoozedUntil: text('snoozed_until'),
     createdAt: text('created_at').notNull()
@@ -313,6 +314,15 @@ export const aiRuns = sqliteTable('ai_runs', {
   ok: integer('ok', { mode: 'boolean' }).notNull(),
   error: text('error'),
   createdAt: text('created_at').notNull()
+})
+
+export const aiSessions = sqliteTable('ai_sessions', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().default(''),
+  transcript: json<unknown[]>('transcript_json').notNull().default([]),
+  context: json<Record<string, unknown>>('context_json').notNull().default({}),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
 })
 
 export const settings = sqliteTable('settings', {

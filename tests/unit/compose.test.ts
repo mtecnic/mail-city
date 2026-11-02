@@ -28,6 +28,7 @@ const msg: MessageDetail = {
   headers: null,
   attachments: [],
   aiSummary: null,
+  aiExtract: null,
   aiCategory: null
 }
 

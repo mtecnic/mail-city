@@ -128,6 +128,7 @@ export function AiSettings() {
         </div>
       </section>
 
+      <IndexAndTriage />
       <ToolPermissions settings={v} onChange={(list) => save.mutate({ autoApproveTools: list })} />
       <RunLog />
     </div>
@@ -451,6 +452,34 @@ function AddLocalServer({ onClose }: { onClose: () => void }) {
       )}
       {addManual.error && <Alert kind="error">{addManual.error.message}</Alert>}
     </div>
+  )
+}
+
+function IndexAndTriage() {
+  const qc = useQueryClient()
+  const status = useQuery({ queryKey: ['ai.index'], queryFn: () => invoke('ai.index.status'), refetchInterval: 15_000 })
+  useEffect(() => onEvent('ai.index.progress', () => qc.invalidateQueries({ queryKey: ['ai.index'] })), [qc])
+  const run = useMutation({ mutationFn: () => invoke('ai.index.run'), onSuccess: () => qc.invalidateQueries({ queryKey: ['ai.index'] }) })
+  const triage = useMutation({ mutationFn: () => invoke('ai.triage.backlog') })
+  const s = status.data
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase text-muted">Background work</h4>
+      <div className="flex items-center gap-3 text-xs">
+        <span className="flex-1">
+          Semantic index: {s ? (s.available ? `${s.indexed} messages indexed, ${s.pending} pending${s.model ? ` · ${s.model}` : ''}${s.lastError ? ` · ${s.lastError}` : ''}` : 'sqlite-vec unavailable on this build') : '…'}
+        </span>
+        <Button size="sm" variant="ghost" onClick={() => run.mutate()} loading={run.isPending || !!s?.running} disabled={!s?.available}>
+          Index now
+        </Button>
+      </div>
+      <div className="flex items-center gap-3 text-xs">
+        <span className="flex-1">Triage the inbox backlog (category, priority) with the triage model.{triage.data ? ` Triaged ${triage.data.triaged}.` : ''}</span>
+        <Button size="sm" variant="ghost" onClick={() => triage.mutate()} loading={triage.isPending}>
+          Triage now
+        </Button>
+      </div>
+    </section>
   )
 }
 

@@ -32,10 +32,15 @@ import { AiService } from './ai/AiService'
 import { buildMailTools } from './ai/tools/mailTools'
 import type { ToolRegistry } from './ai/tools/registry'
 import { TypedEmitter } from './utils/emitter'
+import { EmbeddingIndexer } from './ai/embeddings/Indexer'
+import { Agent } from './ai/agent/Agent'
+import { TriageRunner } from './ai/Triage'
 
 export type KernelEvents = {
   /** A draft was created by a tool/agent and should be opened in the UI. */
   draftCreated: [draftId: string]
+  /** Messages received AI category/priority. */
+  triaged: [messageIds: string[]]
 }
 import type { ServerConfig } from '@shared/schemas/account'
 import type { AccountSummary } from '@shared/schemas/account'
@@ -86,6 +91,9 @@ export class Kernel {
   readonly vault: SecretVault
   readonly ai: AiService
   readonly tools: ToolRegistry
+  readonly indexer: EmbeddingIndexer
+  readonly agent: Agent
+  readonly triage: TriageRunner
   readonly events = new TypedEmitter<KernelEvents>()
 
   constructor(readonly options: KernelOptions) {
@@ -109,13 +117,33 @@ export class Kernel {
     this.vault = new SecretVault(this.settings, options.cipher)
     this.ai = new AiService(this.db, this.settings, this.vault)
     this.tools = buildMailTools(this)
+    this.indexer = new EmbeddingIndexer(this.dbHandle.raw, this.db, this.dbHandle.hasVec, this.ai, this.store, this.search, () => this.ai.get().indexWindowDays, () => this.ai.get().enabled && this.ai.get().autoIndex)
+    this.agent = new Agent(this.db, this.ai, this.tools, (ctx) => this.agentContext(ctx))
+    this.triage = new TriageRunner(this)
     this.wireEvents()
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
     if (options.autoSync !== false) {
       this.sync.start()
       this.outbox.start()
       this.snooze.start()
+      this.indexer.start()
+      this.triage.start()
     }
+  }
+
+  /** Volatile context for the assistant: accounts, folders and the message/thread in view. */
+  private agentContext(ctx: { accountId?: string; messageId?: string; threadId?: string }): string {
+    const accounts = this.accounts
+      .list()
+      .map((a) => `- ${a.displayName} <${a.email}> (id ${a.id}${a.type ? `, ${a.type}` : ''})`)
+      .join('\n')
+    const lines = [`Today is ${new Date().toDateString()}.`, `Accounts:\n${accounts}`]
+    if (ctx.accountId) lines.push(`The user is currently looking at account ${ctx.accountId}.`)
+    if (ctx.messageId) {
+      const m = this.store.getMessage(ctx.messageId)
+      if (m) lines.push(`The user has this message open: id ${m.id}, thread ${m.threadId ?? 'n/a'}, from ${m.fromName} <${m.fromAddr}>, subject "${m.subject}". When they say "this email" they mean it.`)
+    }
+    return lines.join('\n\n')
   }
 
   private wireEvents(): void {
@@ -194,6 +222,7 @@ export class Kernel {
   }
 
   async shutdown(): Promise<void> {
+    this.indexer.stop()
     this.snooze.stop()
     this.outbox.stop()
     await this.sync.stop()

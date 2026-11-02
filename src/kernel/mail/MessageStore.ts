@@ -45,6 +45,8 @@ export interface ListMessagesQuery {
   threadId?: string
   /** Only snoozed messages (the Snoozed view). */
   snoozedOnly?: boolean
+  /** AI Focused view. */
+  focusedOnly?: boolean
 }
 
 export class MessageStore {
@@ -272,6 +274,10 @@ export class MessageStore {
     this.db.update(messages).set({ aiSummary: summary }).where(eq(messages.id, id)).run()
   }
 
+  setAiExtract(id: string, extract: unknown): void {
+    this.db.update(messages).set({ aiExtract: extract }).where(eq(messages.id, id)).run()
+  }
+
   updateFlags(folderId: string, uid: number, flags: Set<string>, labels?: Set<string>): string | undefined {
     const row = this.getByUid(folderId, uid)
     if (!row) return undefined
@@ -354,6 +360,7 @@ export class MessageStore {
     if (q.threadId) where.push(eq(messages.threadId, q.threadId))
     if (q.unreadOnly) where.push(sql`json_extract(${messages.flags}, '$.seen') = 0` as never)
     if (q.flaggedOnly) where.push(sql`json_extract(${messages.flags}, '$.flagged') = 1` as never)
+    if (q.focusedOnly) where.push(sql`(${messages.aiCategory} IS NULL OR ${messages.aiCategory} IN ('primary', 'needs_reply') OR ${messages.aiPriority} >= 2)` as never)
     if (q.before) where.push(lt(messages.date, q.before))
     if (q.snoozedOnly) where.push(gt(messages.snoozedUntil, new Date().toISOString()))
     else if (!q.threadId) where.push(or(isNull(messages.snoozedUntil), lt(messages.snoozedUntil, new Date().toISOString())) as never)

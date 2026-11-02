@@ -11,12 +11,15 @@ import { useComposeActions } from '@renderer/features/compose/useComposeActions'
 import { SearchBar } from './SearchBar'
 import { AppEvents, UpdateBanner } from '@renderer/features/app/AppEvents'
 import { Welcome, ShortcutHelp } from '@renderer/features/app/Welcome'
+import { AssistantPanel } from '@renderer/features/ai/AssistantPanel'
+import { AskMailCard } from '@renderer/features/ai/AskMail'
 import { useQuery } from '@tanstack/react-query'
 import { invoke } from '@renderer/lib/api'
 
 export function MailView({ onSettings }: { onSettings: () => void }) {
   const [adding, setAdding] = useState(false)
   const [help, setHelp] = useState(false)
+  const [assistant, setAssistant] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
   const { mailbox, selectedMessageId, selectedIds, selectMessage } = useUi()
   const actions = useMailActions()
@@ -24,7 +27,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const folders = useFolders()
 
   const title = (() => {
-    if (mailbox.kind === 'unified') return { inbox: 'All inboxes', flagged: 'Starred', sent: 'All sent', drafts: 'All drafts' }[mailbox.specialUse]
+    if (mailbox.kind === 'unified') return { inbox: 'All inboxes', focused: 'Focused', flagged: 'Starred', sent: 'All sent', drafts: 'All drafts' }[mailbox.specialUse]
     if (mailbox.kind === 'outbox') return 'Outbox'
     if (mailbox.kind === 'snoozed') return 'Snoozed'
     if (mailbox.kind === 'search') return `Search: ${mailbox.query}`
@@ -35,6 +38,11 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault()
+        setAssistant((a) => !a)
+        return
+      }
       if (target.closest('input, textarea, select, [contenteditable="true"], .ProseMirror') || e.ctrlKey || e.metaKey || e.altKey) return
       if (e.key === 'c') {
         e.preventDefault()
@@ -88,7 +96,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       <AppEvents />
       <UpdateBanner />
       <div className="flex min-h-0 flex-1">
-      <Sidebar onAddAccount={() => setAdding(true)} onSettings={onSettings} />
+      <Sidebar onAddAccount={() => setAdding(true)} onSettings={onSettings} onAssistant={() => setAssistant((a) => !a)} />
       {accounts.data?.length === 0 ? (
         <Welcome onAddAccount={() => setAdding(true)} />
       ) : mailbox.kind === 'outbox' ? (
@@ -101,6 +109,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
           <section className="flex w-[380px] shrink-0 flex-col border-r border-border">
             <SearchBar />
             <header className="flex h-8 items-center border-b border-border px-3 text-xs font-semibold text-muted">{title}</header>
+            {mailbox.kind === 'search' && <AskMailCard key={mailbox.query} question={mailbox.query} />}
             <MessageList />
           </section>
           <section className="flex min-w-0 flex-1 flex-col">
@@ -108,6 +117,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
           </section>
         </>
       )}
+      {assistant && <AssistantPanel onClose={() => setAssistant(false)} />}
       </div>
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />

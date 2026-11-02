@@ -35,6 +35,7 @@ export interface MessageDetail {
   headers: Record<string, string> | null
   attachments: { id: string; filename: string; mimeType: string; size: number; contentId: string | null; isInline: boolean; available: boolean }[]
   aiSummary: string | null
+  aiExtract: unknown | null
   aiCategory: string | null
 }
 
@@ -99,6 +100,7 @@ export class MessageService {
         available: !!a.localPath
       })),
       aiSummary: row.aiSummary,
+      aiExtract: row.aiExtract ?? null,
       aiCategory: row.aiCategory
     }
   }

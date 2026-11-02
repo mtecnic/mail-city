@@ -108,6 +108,9 @@ function Row({ m, active, checked, onClick, onStar }: { m: MessageListItem; acti
         <div className="flex items-center gap-1.5">
           <span className={cn('truncate text-sm', unread && 'font-medium')}>{m.subject || '(no subject)'}</span>
           {m.hasAttachments && <Paperclip className="size-3 shrink-0 text-muted" />}
+          {m.aiPriority !== null && m.aiPriority >= 3 && <span className="shrink-0 rounded bg-danger/15 px-1 text-[10px] font-medium text-danger">urgent</span>}
+          {m.aiCategory && !['primary', 'needs_reply'].includes(m.aiCategory) && <span className="shrink-0 rounded bg-hover px-1 text-[10px] text-muted">{m.aiCategory.replace('_', ' ')}</span>}
+          {m.aiCategory === 'needs_reply' && <span className="shrink-0 rounded bg-accent/15 px-1 text-[10px] text-accent">reply</span>}
         </div>
         <div className="truncate text-xs text-muted">{m.snippet}</div>
       </div>

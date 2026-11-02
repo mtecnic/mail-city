@@ -12,7 +12,11 @@ export function useFolders() {
 }
 
 export function listQueryFor(sel: MailboxSelection): ChannelInput<'messages.list'> {
-  if (sel.kind === 'unified') return sel.specialUse === 'flagged' ? { flaggedOnly: true, specialUse: 'inbox' } : { specialUse: sel.specialUse }
+  if (sel.kind === 'unified') {
+    if (sel.specialUse === 'flagged') return { flaggedOnly: true, specialUse: 'inbox' }
+    if (sel.specialUse === 'focused') return { focusedOnly: true, specialUse: 'inbox' }
+    return { specialUse: sel.specialUse }
+  }
   if (sel.kind === 'folder') return { accountId: sel.accountId, folderId: sel.folderId }
   if (sel.kind === 'snoozed') return { snoozedOnly: true }
   return { limit: 1, folderId: '__none__' }

@@ -44,3 +44,4 @@ export type Rule = z.output<typeof RuleSchema>
 
 export const RuleInputSchema = RuleSchema.partial({ id: true, sortOrder: true, createdAt: true, enabled: true, stopProcessing: true, accountIds: true })
 export type RuleInput = z.input<typeof RuleInputSchema>
+export type RuleInputParsed = z.output<typeof RuleInputSchema>

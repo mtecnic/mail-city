@@ -58,7 +58,9 @@ export const ListMessagesQuerySchema = z.object({
   before: z.string().optional(),
   limit: z.number().int().min(1).max(500).optional(),
   threadId: z.string().optional(),
-  snoozedOnly: z.boolean().optional()
+  snoozedOnly: z.boolean().optional(),
+  /** AI "Focused": priority ≥ 2 or category primary/needs_reply (untriaged mail is included). */
+  focusedOnly: z.boolean().optional()
 })
 
 export const AttachmentSchema = z.object({
@@ -96,6 +98,7 @@ export const MessageDetailSchema = z.object({
   headers: z.record(z.string(), z.string()).nullable(),
   attachments: z.array(AttachmentSchema),
   aiSummary: z.string().nullable(),
+  aiExtract: z.unknown().nullable(),
   aiCategory: z.string().nullable()
 })
 export type MessageDetail = z.output<typeof MessageDetailSchema>

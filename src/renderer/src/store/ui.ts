@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type MailboxSelection =
-  | { kind: 'unified'; specialUse: 'inbox' | 'flagged' | 'sent' | 'drafts' }
+  | { kind: 'unified'; specialUse: 'inbox' | 'flagged' | 'sent' | 'drafts' | 'focused' }
   | { kind: 'folder'; accountId: string; folderId: string }
   | { kind: 'outbox' }
   | { kind: 'snoozed' }

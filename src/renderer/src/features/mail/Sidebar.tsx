@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, PenSquare, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, Clock, AlarmClock, Search, type LucideIcon } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, PenSquare, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, Clock, AlarmClock, Search, Sparkles, Bot, type LucideIcon } from 'lucide-react'
 import { useQuery as useRQ } from '@tanstack/react-query'
 import { invoke, useMailEvent } from '@renderer/lib/api'
 import { Button, cn } from '@renderer/components/ui'
@@ -12,7 +12,7 @@ import type { Folder } from '@shared/schemas/mail'
 
 const SPECIAL_ICON: Record<string, LucideIcon> = { inbox: Inbox, sent: Send, drafts: File, trash: Trash2, junk: AlertOctagon, archive: Archive, all: Archive, flagged: Star }
 
-export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void; onSettings: () => void }) {
+export function Sidebar({ onAddAccount, onSettings, onAssistant }: { onAddAccount: () => void; onSettings: () => void; onAssistant: () => void }) {
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
   const folders = useFolders()
   const { mailbox, setMailbox } = useUi()
@@ -46,6 +46,7 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
       <nav className="flex-1 space-y-3 overflow-y-auto px-2 pb-2">
         <div className="space-y-0.5">
           <NavRow icon={Inbox} label="All inboxes" count={unifiedUnread} active={isSel({ kind: 'unified', specialUse: 'inbox' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'inbox' })} />
+          <NavRow icon={Sparkles} label="Focused" active={isSel({ kind: 'unified', specialUse: 'focused' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'focused' })} />
           <NavRow icon={Star} label="Starred" active={isSel({ kind: 'unified', specialUse: 'flagged' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'flagged' })} />
           <NavRow icon={Send} label="All sent" active={isSel({ kind: 'unified', specialUse: 'sent' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'sent' })} />
           <NavRow icon={File} label="All drafts" active={isSel({ kind: 'unified', specialUse: 'drafts' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'drafts' })} />
@@ -96,9 +97,14 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
 
       <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted">
         <span>{accounts.data?.length ?? 0} account{accounts.data?.length === 1 ? '' : 's'}</span>
-        <button className="rounded p-1 hover:bg-hover hover:text-fg" onClick={onSettings} aria-label="Settings">
-          <Settings className="size-4" />
-        </button>
+        <span className="flex items-center gap-1">
+          <button className="rounded p-1 hover:bg-hover hover:text-fg" onClick={onAssistant} aria-label="Assistant" title="Assistant (Ctrl+J)">
+            <Bot className="size-4" />
+          </button>
+          <button className="rounded p-1 hover:bg-hover hover:text-fg" onClick={onSettings} aria-label="Settings">
+            <Settings className="size-4" />
+          </button>
+        </span>
       </div>
     </aside>
   )

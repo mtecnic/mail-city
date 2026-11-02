@@ -68,14 +68,9 @@ function migrate(raw: Database.Database, hasVec: boolean): void {
     log.info(`applying migration ${m.version} (${m.name})`)
     run(m)
   }
-  if (hasVec) {
-    // Vector table lives outside the numbered migrations because it depends on the extension being loadable.
-    raw.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS message_vectors USING vec0(
-      message_id TEXT,
-      chunk_index INTEGER,
-      embedding FLOAT[768]
-    )`)
-  }
+  // The vector table is created lazily by the embedding indexer, because its
+  // dimension depends on the embedding model the user picks.
+  void hasVec
 }
 
 export { schema }

@@ -8,6 +8,7 @@ import { formatFullDate, formatBytes, initials, avatarColor } from '@renderer/li
 import { sanitizeEmailHtml, textToHtml, wrapForFrame } from '@renderer/lib/sanitize'
 import { useMessage, useMailActions } from './hooks'
 import { SnoozeMenu } from './SnoozeMenu'
+import { MessageAiPanel } from '@renderer/features/ai/MessageAiPanel'
 import type { MessageDetail, Address } from '@shared/schemas/mail'
 
 export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'replyAll' | 'forward', m: MessageDetail) => void }) {
@@ -99,6 +100,7 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
         </div>
       </div>
 
+      <MessageAiPanel m={m} />
       <Body m={m} />
 
       {m.attachments.filter((a) => !a.isInline).length > 0 && (
