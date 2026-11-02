@@ -1,0 +1,38 @@
+appId: com.mtecnic.mailcity
+productName: Mail City
+directories:
+  buildResources: resources
+  output: release
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - '**/*.node'
+  - '**/sqlite-vec-*/**'
+extraResources:
+  - from: resources
+    to: resources
+    filter: ['*.png', '*.ico']
+protocols:
+  - name: mailto
+    schemes: [mailto]
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  executableName: MailCity
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Mail City
+  artifactName: ${productName}-Setup-${version}.${ext}
+publish:
+  provider: github
+  owner: mtecnic
+  repo: mail-city
+npmRebuild: true

@@ -1,0 +1,27 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": [
+    "electron.vite.config.*",
+    "vitest.config.*",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/kernel/**/*",
+    "src/shared/**/*",
+    "tests/**/*"
+  ],
+  "exclude": ["tests/unit/sanitize.test.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["electron-vite/node", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@kernel/*": ["src/kernel/*"]
+    }
+  }
+}
