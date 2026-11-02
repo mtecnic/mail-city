@@ -35,7 +35,11 @@ afterAll(async () => {
   } catch {
     /* already gone */
   }
-  rmSync(userData, { recursive: true, force: true })
+  try {
+    rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch {
+    /* Electron may still be flushing its profile; a leftover temp dir is harmless */
+  }
 }, 30_000)
 
 describe('Mail City smoke', () => {

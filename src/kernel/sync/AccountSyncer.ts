@@ -55,9 +55,11 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   private lastPoll = 0
   private folderSyncRequests = new Set<string>()
   private bodyRequests: { messageId: string; resolve: (ok: boolean) => void }[] = []
+  private sourceRequests: { messageId: string; resolve: (raw: Buffer | null) => void }[] = []
   private state: SyncState = 'idle'
   private fullResyncRequested = true
   private readonly mutex = new Mutex()
+  private abort = new AbortController()
 
   constructor(
     readonly account: AccountRow,
@@ -80,15 +82,18 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   start(): void {
     if (this.running) return
     this.running = true
+    this.abort = new AbortController()
     this.deps.ops.resetRunning(this.account.id)
     this.loopPromise = this.loop().catch((e) => this.log.error('sync loop crashed', e))
   }
 
   async stop(): Promise<void> {
     this.running = false
+    this.abort.abort()
     this.kick()
-    await this.loopPromise
-    await this.provider.disconnect()
+    // Don't hang shutdown on a stuck connection attempt.
+    await Promise.race([this.loopPromise, new Promise((r) => setTimeout(r, 3000))])
+    await Promise.race([this.provider.disconnect(), new Promise((r) => setTimeout(r, 2000))]).catch(() => {})
   }
 
   /** Wake the loop (new op queued, folder opened, etc). */
@@ -110,6 +115,14 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   fetchBody(messageId: string): Promise<boolean> {
     return new Promise((resolve) => {
       this.bodyRequests.push({ messageId, resolve })
+      this.kick()
+    })
+  }
+
+  /** Fetch the raw RFC822 source of a message (not cached). */
+  fetchSource(messageId: string): Promise<Buffer | null> {
+    return new Promise((resolve) => {
+      this.sourceRequests.push({ messageId, resolve })
       this.kick()
     })
   }
@@ -153,7 +166,7 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
           await this.waitForWork(10 * 60_000)
         } else {
           await this.provider.disconnect().catch(() => {})
-          await sleep(backoffDelay(Math.min(this.failures, 6), { baseMs: 2000, maxMs: 5 * 60_000 })).catch(() => {})
+          await sleep(backoffDelay(Math.min(this.failures, 6), { baseMs: 2000, maxMs: 5 * 60_000 }), this.abort.signal).catch(() => {})
         }
       }
     }
@@ -352,6 +365,23 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   // ---- bodies -------------------------------------------------------------
 
   private async serveBodyRequests(): Promise<void> {
+    while (this.sourceRequests.length) {
+      const req = this.sourceRequests.shift()!
+      try {
+        const msg = this.deps.store.getMessage(req.messageId)
+        const folder = msg ? this.deps.store.getFolder(msg.folderId) : undefined
+        if (!msg || !folder || msg.uid < 0) {
+          req.resolve(null)
+          continue
+        }
+        const mb = this.provider.currentMailbox
+        if (!mb || mb.path !== folder.path) await this.provider.open(folder.path)
+        req.resolve(await this.provider.fetchSource(msg.uid))
+      } catch (e) {
+        this.log.warn('source fetch failed', { id: req.messageId, error: String(e) })
+        req.resolve(null)
+      }
+    }
     while (this.bodyRequests.length) {
       const req = this.bodyRequests.shift()!
       try {
@@ -484,6 +514,18 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
         }
         return
       }
+      case 'createFolder':
+        await p.createFolder(op.path)
+        await this.syncFolderList()
+        return
+      case 'renameFolder':
+        await p.renameFolder(op.path, op.newPath)
+        await this.syncFolderList()
+        return
+      case 'deleteFolder':
+        await p.deleteFolder(op.path)
+        await this.syncFolderList()
+        return
     }
   }
 }

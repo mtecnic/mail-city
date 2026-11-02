@@ -47,7 +47,7 @@ export function MessageAiPanel({ m }: { m: MessageDetail }) {
     if (latest) update(latest.key, { initialHtml: `<p>${text}</p>${latest.initialHtml}` })
   }
 
-  if (!ai.data?.enabled) return null
+  if (!ai.data?.enabled || !ai.data.providers.some((p) => p.enabled)) return null
   const hasItems = extract && ((extract.events?.length ?? 0) + (extract.tasks?.length ?? 0) + (extract.tracking?.length ?? 0) + (extract.amounts?.length ?? 0) > 0)
 
   return (

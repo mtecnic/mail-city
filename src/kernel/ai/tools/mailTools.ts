@@ -8,6 +8,7 @@ import { defineTool, ToolRegistry, type ToolContext } from './registry'
 import type { Kernel } from '../../index'
 import type { MessageListItem } from '../../mail/MessageStore'
 import { htmlToText } from '../../mail/text'
+import { parseAddressList } from '../../mail/addresses'
 
 const MAX_BODY = 12_000
 
@@ -225,7 +226,6 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       summarize: (i) => `Create draft "${i.subject}" to ${i.to.join(', ')}`,
       handler: async (i, ctx) => {
         scopeAccounts(k, ctx, i.accountId)
-        const { parseAddressList } = await import('../../mail/addresses')
         const identity = k.identities.defaultFor(i.accountId)
         const html = `<p>${escapeHtml(i.body).replace(/\n/g, '<br>')}</p>`
         const d = k.drafts.save({
@@ -261,7 +261,6 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       summarize: (i) => `Send "${i.subject}" to ${i.to.join(', ')}${i.cc?.length ? ` (cc ${i.cc.join(', ')})` : ''}`,
       handler: async (i, ctx) => {
         scopeAccounts(k, ctx, i.accountId)
-        const { parseAddressList } = await import('../../mail/addresses')
         const identity = k.identities.defaultFor(i.accountId)
         const d = k.drafts.save({
           accountId: i.accountId,

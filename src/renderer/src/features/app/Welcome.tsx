@@ -50,6 +50,12 @@ export const SHORTCUTS: [string, string][] = [
   ['s', 'Star'],
   ['u', 'Mark unread'],
   ['r / a / f', 'Reply / reply all / forward'],
+  ['x', 'Select / deselect message'],
+  ['v', 'Move to folder'],
+  ['z', 'Snooze'],
+  ['!', 'Mark as junk'],
+  ['Right-click', 'Context menu (accounts, folders, messages)'],
+  ['Ctrl+J', 'Assistant'],
   ['Esc', 'Deselect'],
   ['?', 'This help']
 ]

@@ -9,6 +9,9 @@ export type PendingOp =
   | { kind: 'delete'; folderPath: string; uids: number[] }
   | { kind: 'setLabels'; folderPath: string; uids: number[]; add: string[]; remove: string[] }
   | { kind: 'append'; folderPath: string; mimePath: string; flags: string[]; messageId?: string }
+  | { kind: 'createFolder'; path: string }
+  | { kind: 'renameFolder'; path: string; newPath: string }
+  | { kind: 'deleteFolder'; path: string }
 
 /** Durable per-account queue of server operations, replayed in order. */
 export class OpQueue {

@@ -73,6 +73,21 @@ export class SyncEngine extends TypedEmitter<EngineEvents> {
     return s ? s.fetchBody(messageId) : Promise.resolve(false)
   }
 
+  fetchSource(accountId: string, messageId: string): Promise<Buffer | null> {
+    const s = this.syncers.get(accountId)
+    return s ? s.fetchSource(messageId) : Promise.resolve(null)
+  }
+
+  /** Tear down and recreate an account's syncer (after server/credential changes). */
+  async restart(accountId: string): Promise<void> {
+    const s = this.syncers.get(accountId)
+    if (s) {
+      this.syncers.delete(accountId)
+      await s.stop()
+    }
+    if (this.started) await this.reconcile()
+  }
+
   private async reconcile(): Promise<void> {
     const wanted = this.accounts.list().filter((a) => a.enabled)
     for (const [id, s] of this.syncers) {

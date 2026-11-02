@@ -8,6 +8,8 @@
 import { openDb, type DbHandle } from './db'
 import { SettingsStore } from './settings/SettingsStore'
 import { createLogger } from './utils/logger'
+import { KernelError } from './utils/result'
+import { sql } from 'drizzle-orm'
 import type { SecretCipher } from './accounts/SecretStore'
 import { AccountStore, type NewAccountInput } from './accounts/AccountStore'
 import { OAuthConfig, type OAuthEnvDefaults } from './auth/oauthConfig'
@@ -23,6 +25,9 @@ import { DraftStore } from './mail/DraftStore'
 import { OutboxService } from './mail/Outbox'
 import { ComposeService } from './mail/ComposeService'
 import { SearchService } from './search/SearchService'
+import { FolderService } from './mail/FolderService'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { ContactStore } from './contacts/ContactStore'
 import { RulesEngine } from './rules/RulesEngine'
 import { SnoozeService } from './mail/Snooze'
@@ -85,6 +90,7 @@ export class Kernel {
   readonly outbox: OutboxService
   readonly compose: ComposeService
   readonly search: SearchService
+  readonly folders: FolderService
   readonly contacts: ContactStore
   readonly rules: RulesEngine
   readonly snooze: SnoozeService
@@ -111,6 +117,7 @@ export class Kernel {
     this.outbox = new OutboxService(this.db, this.accounts, this.tokens, this.settings, this.store, this.mail, this.sync, this.identities, this.drafts, options.dataDir)
     this.compose = new ComposeService(this.mail, this.identities, this.drafts, this.store, this.sync, options.dataDir)
     this.search = new SearchService(this.dbHandle.raw, this.store, this.accounts)
+    this.folders = new FolderService(this.db, this.store, this.sync)
     this.contacts = new ContactStore(this.db)
     this.rules = new RulesEngine(this.db, this.store, this.mail)
     this.snooze = new SnoozeService(this.db, this.store)
@@ -212,6 +219,90 @@ export class Kernel {
     })
     if (t.cacheBlob) this.accounts.secrets.set(summary.id, 'oauth_meta', t.cacheBlob)
     return summary
+  }
+
+  // ---- account editing ---------------------------------------------------
+
+  /** Full editable view of an account (no secrets). */
+  accountDetail(id: string) {
+    const a = this.accounts.get(id)
+    if (!a) throw new KernelError('NOT_FOUND', 'Account not found')
+    return {
+      id: a.id,
+      type: a.type as 'gmail' | 'outlook' | 'icloud' | 'yahoo' | 'imap',
+      email: a.email,
+      displayName: a.displayName,
+      color: a.color,
+      enabled: a.enabled,
+      authType: a.authType as 'oauth2' | 'password',
+      oauthProvider: (a.oauthProvider ?? null) as 'google' | 'microsoft' | null,
+      imap: { host: a.imapHost, port: a.imapPort, tls: a.imapTls as ServerConfig['tls'] },
+      smtp: { host: a.smtpHost, port: a.smtpPort, tls: a.smtpTls as ServerConfig['tls'] },
+      syncSettings: a.syncSettings as { initialWindowDays?: number },
+      lastError: a.lastError,
+      lastSyncAt: a.lastSyncAt
+    }
+  }
+
+  async updateAccount(id: string, patch: { displayName?: string; color?: string; enabled?: boolean; imap?: ServerConfig; smtp?: ServerConfig; syncSettings?: Record<string, unknown> }): Promise<void> {
+    const row: Parameters<AccountStore['update']>[1] = {}
+    if (patch.displayName !== undefined) row.displayName = patch.displayName
+    if (patch.color !== undefined) row.color = patch.color
+    if (patch.enabled !== undefined) row.enabled = patch.enabled
+    if (patch.syncSettings) row.syncSettings = { ...(this.accounts.get(id)?.syncSettings ?? {}), ...patch.syncSettings }
+    let restart = false
+    if (patch.imap) {
+      Object.assign(row, { imapHost: patch.imap.host, imapPort: patch.imap.port, imapTls: patch.imap.tls })
+      restart = true
+    }
+    if (patch.smtp) Object.assign(row, { smtpHost: patch.smtp.host, smtpPort: patch.smtp.port, smtpTls: patch.smtp.tls })
+    if (restart) row.lastError = null
+    this.accounts.update(id, row)
+    if (restart) await this.sync.restart(id)
+  }
+
+  async setAccountPassword(id: string, password: string): Promise<void> {
+    const a = this.accounts.get(id)
+    if (!a) throw new KernelError('NOT_FOUND', 'Account not found')
+    this.accounts.secrets.set(id, 'password', password)
+    this.accounts.secrets.delete(id, 'access_token')
+    this.accounts.update(id, { lastError: null })
+    if (a.authType !== 'password') this.db.run(sql`UPDATE accounts SET auth_type = 'password', oauth_provider = NULL WHERE id = ${id}`)
+    await this.sync.restart(id)
+  }
+
+  /** Redeem a fresh OAuth ticket for an existing account (re-auth or switch from password). */
+  async reauthAccount(id: string, ticket: string): Promise<void> {
+    const a = this.accounts.get(id)
+    if (!a) throw new KernelError('NOT_FOUND', 'Account not found')
+    const t = this.oauth.redeem(ticket)
+    if (t.email.toLowerCase() !== a.email.toLowerCase()) throw new KernelError('WRONG_ACCOUNT', `You signed in as ${t.email}, but this account is ${a.email}`)
+    this.accounts.secrets.set(id, 'refresh_token', t.refreshToken)
+    this.accounts.secrets.set(id, 'access_token', t.accessToken, t.expiresAt)
+    if (t.cacheBlob) this.accounts.secrets.set(id, 'oauth_meta', t.cacheBlob)
+    this.db.run(sql`UPDATE accounts SET auth_type = 'oauth2', oauth_provider = ${t.provider}, last_error = NULL WHERE id = ${id}`)
+    this.accounts.emit('changed')
+    await this.sync.restart(id)
+  }
+
+  /** Test the stored credentials of an existing account. */
+  async testExistingAccount(id: string): Promise<ConnectionTestResult> {
+    const a = this.accountDetail(id)
+    const creds = await this.tokens.credentialsFor(id)
+    return testConnection(a.imap, a.smtp, creds)
+  }
+
+  /** Raw RFC822 source of a message, saved under dataDir/raw. */
+  async messageSource(id: string): Promise<{ path: string; text: string } | null> {
+    const m = this.store.getMessage(id)
+    if (!m) return null
+    const raw = await this.sync.fetchSource(m.accountId, id)
+    if (!raw) return null
+    const dir = join(this.options.dataDir, 'raw')
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, `${id}.eml`)
+    await writeFile(path, raw)
+    return { path, text: raw.toString('utf8', 0, Math.min(raw.length, 200_000)) }
   }
 
   private credsFromRequest(req: CreateAccountRequest): Credentials {

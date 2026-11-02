@@ -52,8 +52,16 @@ export function registerIpc(kernel: Kernel): void {
   handle('accounts.discover', ({ email }) => kernel.discover(email))
   handle('accounts.test', (req) => kernel.testAccount(req))
   handle('accounts.create', (req) => kernel.createAccount(req))
-  handle('accounts.update', ({ id, patch }) => kernel.accounts.update(id, patch))
-  handle('accounts.remove', ({ id }) => kernel.accounts.remove(id))
+  handle('accounts.get', ({ id }) => kernel.accountDetail(id))
+  handle('accounts.update', ({ id, patch }) => kernel.updateAccount(id, patch))
+  handle('accounts.setPassword', ({ id, password }) => kernel.setAccountPassword(id, password))
+  handle('accounts.reauth', ({ id, ticket }) => kernel.reauthAccount(id, ticket))
+  handle('accounts.testExisting', ({ id }) => kernel.testExistingAccount(id))
+  handle('accounts.reorder', ({ ids }) => kernel.accounts.reorder(ids))
+  handle('accounts.remove', async ({ id }) => {
+    await kernel.sync.restart(id).catch(() => {})
+    kernel.accounts.remove(id)
+  })
   kernel.accounts.on('changed', () => emit('accounts.changed', undefined))
 
   handle('oauth.start', ({ provider, loginHint }) => kernel.oauth.start(provider, loginHint))
@@ -63,6 +71,21 @@ export function registerIpc(kernel: Kernel): void {
   // ---- mail --------------------------------------------------------------
   handle('folders.list', ({ accountId }) => kernel.store.listFolders(accountId))
   handle('folders.sync', ({ accountId, folderId }) => kernel.sync.requestFolderSync(accountId, folderId))
+  handle('folders.create', ({ accountId, name, parentId }) => kernel.folders.create(accountId, name, parentId))
+  handle('folders.rename', ({ id, name }) => kernel.folders.rename(id, name))
+  handle('folders.delete', ({ id }) => kernel.folders.delete(id))
+  handle('folders.markAllRead', ({ id }) => ({ count: kernel.folders.markAllRead(id) }))
+  handle('folders.empty', ({ id }) => ({ count: kernel.folders.empty(id) }))
+  handle('messages.source', ({ id }) => kernel.messageSource(id))
+  handle('messages.saveSource', async ({ id }) => {
+    const src = await kernel.messageSource(id)
+    if (!src) return { ok: false }
+    const m = kernel.store.getMessage(id)
+    const r = await dialog.showSaveDialog({ defaultPath: `${(m?.subject || 'message').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)}.eml`, filters: [{ name: 'Email', extensions: ['eml'] }] })
+    if (r.canceled || !r.filePath) return { ok: false }
+    await copyFile(src.path, r.filePath)
+    return { ok: true, path: r.filePath }
+  })
 
   handle('messages.list', (q) => kernel.mail.list(q))
   handle('messages.thread', ({ threadId }) => kernel.mail.thread(threadId))

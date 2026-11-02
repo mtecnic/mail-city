@@ -3,7 +3,7 @@ import { Kernel } from '@kernel/index'
 import { plainCipher } from '@kernel/accounts/SecretStore'
 
 function makeKernel() {
-  return new Kernel({ dataDir: '/tmp', dbPath: ':memory:', cipher: plainCipher })
+  return new Kernel({ dataDir: '/tmp', dbPath: ':memory:', cipher: plainCipher, autoSync: false })
 }
 
 describe('Kernel', () => {
@@ -48,5 +48,18 @@ describe('Kernel', () => {
     k = makeKernel()
     const row = k.dbHandle.raw.prepare(`SELECT name FROM sqlite_master WHERE name = 'messages_fts'`).get()
     expect(row).toBeTruthy()
+  })
+
+  it('edits accounts: detail, update servers, set password, reorder', async () => {
+    k = makeKernel()
+    const a = k.accounts.create({ type: 'imap', email: 'a@test', displayName: 'A', imap: { host: 'x', port: 993, tls: 'tls' }, smtp: { host: 'x', port: 587, tls: 'starttls' }, auth: { type: 'password', password: 'p' } })
+    const b = k.accounts.create({ type: 'imap', email: 'b@test', displayName: 'B', imap: { host: 'x', port: 993, tls: 'tls' }, smtp: { host: 'x', port: 587, tls: 'starttls' }, auth: { type: 'password', password: 'p' } })
+    await k.updateAccount(a.id, { displayName: 'Alpha', imap: { host: 'imap.new', port: 143, tls: 'starttls' }, syncSettings: { initialWindowDays: 30 } })
+    const d = k.accountDetail(a.id)
+    expect(d).toMatchObject({ displayName: 'Alpha', imap: { host: 'imap.new', port: 143, tls: 'starttls' }, syncSettings: { initialWindowDays: 30 }, authType: 'password' })
+    await k.setAccountPassword(a.id, 'new-secret')
+    expect(k.accounts.secrets.get(a.id, 'password')?.value).toBe('new-secret')
+    k.accounts.reorder([b.id, a.id])
+    expect(k.accounts.list().map((x) => x.email)).toEqual(['b@test', 'a@test'])
   })
 })

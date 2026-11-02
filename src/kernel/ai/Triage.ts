@@ -19,7 +19,7 @@ export class TriageRunner {
     this.k.sync.on('newMessages', (_a, folderId, ids) => {
       const f = this.k.store.getFolder(folderId)
       if (f?.specialUse !== 'inbox') return
-      if (!this.k.ai.get().enabled || !this.k.ai.get().autoTriage) return
+      if (!this.k.ai.get().enabled || !this.k.ai.get().autoTriage || !this.k.ai.routeFor('triage')) return
       for (const id of ids) this.queue.add(id)
       this.schedule()
     })
