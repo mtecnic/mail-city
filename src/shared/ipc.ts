@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { AppSettingsSchema } from './schemas/settings'
 import { AccountSummarySchema, AccountTypeSchema, ServerConfigSchema } from './schemas/account'
 import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth'
+import { FolderSchema, ListMessagesQuerySchema, MessageDetailSchema, MessageFlagsSchema, MessageListItemSchema } from './schemas/mail'
 
 export function defineChannel<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(input: I, output: O) {
   return { input, output }
@@ -71,7 +72,26 @@ export const channels = {
 
   'oauth.start': defineChannel(z.object({ provider: z.enum(['google', 'microsoft']), loginHint: z.string().optional() }), OAuthStartResultSchema),
   'oauth.config.get': defineChannel(z.void(), z.object({ user: OAuthClientConfigSchema, hasGoogle: z.boolean(), hasMicrosoft: z.boolean() })),
-  'oauth.config.set': defineChannel(OAuthClientConfigSchema, z.void())
+  'oauth.config.set': defineChannel(OAuthClientConfigSchema, z.void()),
+
+  'folders.list': defineChannel(z.object({ accountId: z.string().optional() }), z.array(FolderSchema)),
+  'folders.sync': defineChannel(z.object({ accountId: z.string(), folderId: z.string() }), z.void()),
+
+  'messages.list': defineChannel(ListMessagesQuerySchema, z.array(MessageListItemSchema)),
+  'messages.thread': defineChannel(z.object({ threadId: z.string() }), z.array(MessageListItemSchema)),
+  'messages.get': defineChannel(z.object({ id: z.string(), fetchBody: z.boolean().optional() }), MessageDetailSchema),
+  'messages.setFlags': defineChannel(z.object({ ids: z.array(z.string()).min(1), flags: MessageFlagsSchema.partial() }), z.void()),
+  'messages.move': defineChannel(z.object({ ids: z.array(z.string()).min(1), toFolderId: z.string() }), z.void()),
+  'messages.archive': defineChannel(z.object({ ids: z.array(z.string()).min(1) }), z.void()),
+  'messages.delete': defineChannel(z.object({ ids: z.array(z.string()).min(1) }), z.void()),
+  'messages.junk': defineChannel(z.object({ ids: z.array(z.string()).min(1), junk: z.boolean() }), z.void()),
+  'messages.unreadCount': defineChannel(z.object({ accountId: z.string().optional() }), z.number()),
+
+  'attachments.open': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), error: z.string().optional() })),
+  'attachments.saveAs': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), path: z.string().optional() })),
+  'attachments.dataUrl': defineChannel(z.object({ id: z.string() }), z.string().nullable()),
+
+  'sync.now': defineChannel(z.object({ accountId: z.string().optional() }), z.void())
 } as const
 
 export type Channels = typeof channels
@@ -88,7 +108,11 @@ export const events = {
     detail: z.string().optional()
   }),
   'settings.changed': AppSettingsSchema,
-  'accounts.changed': z.void()
+  'accounts.changed': z.void(),
+  'folders.changed': z.object({ accountId: z.string() }),
+  'messages.changed': z.object({ accountId: z.string(), folderId: z.string() }),
+  'messages.new': z.object({ accountId: z.string(), folderId: z.string(), ids: z.array(z.string()) }),
+  'messages.bodyFetched': z.object({ id: z.string() })
 } as const
 
 export type Events = typeof events

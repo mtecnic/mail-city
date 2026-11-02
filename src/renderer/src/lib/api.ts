@@ -22,11 +22,12 @@ export function useMailEvent<E extends EventName>(event: E, handler: (payload: E
 /** Invalidate react-query keys whenever a main-process event fires. */
 export function useInvalidateOn(event: EventName, keys: unknown[][]): void {
   const qc = useQueryClient()
+  const serialized = JSON.stringify(keys)
   useEffect(
     () =>
       onEvent(event, () => {
-        for (const k of keys) void qc.invalidateQueries({ queryKey: k })
+        for (const k of JSON.parse(serialized) as unknown[][]) void qc.invalidateQueries({ queryKey: k })
       }),
-    [event, qc, keys]
+    [event, qc, serialized]
   )
 }

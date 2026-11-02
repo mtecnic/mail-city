@@ -15,6 +15,9 @@ import { OAuthFlow } from './auth/OAuthFlow'
 import { TokenManager } from './auth/TokenManager'
 import { discoverAccount, type DiscoveryResult } from './accounts/autodiscovery'
 import { testConnection, type ConnectionTestResult, type Credentials } from './accounts/connectionTest'
+import { MessageStore } from './mail/MessageStore'
+import { MessageService } from './mail/MessageService'
+import { SyncEngine } from './sync/SyncEngine'
 import type { ServerConfig } from '@shared/schemas/account'
 import type { AccountSummary } from '@shared/schemas/account'
 
@@ -29,6 +32,8 @@ export interface KernelOptions {
   openUrl?: (url: string) => Promise<void>
   /** Build-time OAuth client defaults. */
   oauthDefaults?: OAuthEnvDefaults
+  /** Start background sync immediately (default true; tests pass false). */
+  autoSync?: boolean
 }
 
 export type CreateAccountRequest = {
@@ -48,6 +53,9 @@ export class Kernel {
   readonly oauthConfig: OAuthConfig
   readonly oauth: OAuthFlow
   readonly tokens: TokenManager
+  readonly store: MessageStore
+  readonly sync: SyncEngine
+  readonly mail: MessageService
 
   constructor(readonly options: KernelOptions) {
     this.dbHandle = openDb({ path: options.dbPath ?? `${options.dataDir}/mail-city.sqlite` })
@@ -56,7 +64,11 @@ export class Kernel {
     this.oauthConfig = new OAuthConfig(this.settings, options.oauthDefaults ?? {})
     this.oauth = new OAuthFlow(this.oauthConfig, options.openUrl ?? (async () => {}))
     this.tokens = new TokenManager(this.accounts, this.oauthConfig)
+    this.store = new MessageStore(this.db)
+    this.sync = new SyncEngine(this.db, this.accounts, this.tokens, this.settings, this.store, options.dataDir)
+    this.mail = new MessageService(this.store, this.sync, this.accounts)
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
+    if (options.autoSync !== false) this.sync.start()
   }
 
   get db() {
@@ -98,6 +110,7 @@ export class Kernel {
   }
 
   async shutdown(): Promise<void> {
+    await this.sync.stop()
     this.dbHandle.close()
   }
 }
@@ -105,3 +118,5 @@ export class Kernel {
 export type { SecretCipher } from './accounts/SecretStore'
 export type { DiscoveryResult } from './accounts/autodiscovery'
 export type { ConnectionTestResult } from './accounts/connectionTest'
+export type { MessageListItem, ListMessagesQuery } from './mail/MessageStore'
+export type { MessageDetail } from './mail/MessageService'
