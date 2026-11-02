@@ -21,7 +21,9 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    resolve: { alias: { '@shared': shared } }
+    resolve: { alias: { '@shared': shared } },
+    // Sandboxed preload scripts must be CommonJS (ESM preloads require sandbox: false).
+    build: { rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].js' } } }
   },
   renderer: {
     resolve: { alias: { '@shared': shared, '@renderer': resolve('src/renderer/src') } },

@@ -45,9 +45,22 @@ Everything the UI can do, an LLM can do, because both go through the same kernel
 
 SQLite (WAL) via `better-sqlite3` + drizzle. Hand-written forward-only SQL migrations in `src/kernel/db/migrations.ts` (FTS5 and `sqlite-vec` virtual tables can't be expressed in drizzle). Schema is in `src/kernel/db/schema.ts`.
 
-## Build phases
+### Sync model
 
-1. Scaffold ✔ — electron-vite, React, Tailwind, IPC, SQLite, CI, electron-builder
+One `AccountSyncer` per account (`src/kernel/sync/AccountSyncer.ts`) owns a single reconnecting IMAP connection. It syncs the folder list, eagerly caches a date window of INBOX/Sent/Drafts headers, keeps the rest lazy, uses CONDSTORE `CHANGEDSINCE` for flag deltas and a UID diff for deletions, IDLEs on INBOX between passes and polls other folders. User actions are written to SQLite first and queued in `pending_ops`, then replayed in order; optimistic moves use negative placeholder UIDs until the server's COPYUID map (or the next folder sync) assigns the real one. Syncers currently run in the main process; the class has no Electron dependency and can be moved into a `utilityProcess` without API changes.
+
+### AI layer
+
+`src/kernel/ai`: `llm/` (provider interface, Anthropic + OpenAI-compatible implementations, local-server discovery), `tools/` (the registry every consumer shares), `features/` (summaries, triage, drafting, extraction, …), `embeddings/` (sqlite-vec index + hybrid search), `agent/` (the assistant loop) and `mcp/` (MCP bridge). `AiService` resolves a provider+model per feature under the privacy policy and logs every run.
+
+## Testing
+
+- `pnpm test` — unit + integration (vitest): kernel on in-memory SQLite, sync engine against an in-memory IMAP double (`tests/unit/fakeImap.ts`), outbox against a real in-process SMTP server, MCP bridge over an in-memory transport, sanitizer XSS corpus (jsdom), parsers and query language.
+- `pnpm test:e2e` — Playwright drives the built Electron app (welcome, wizard, settings, bridge isolation).
+
+## Build phases (all complete)
+
+1. Scaffold — electron-vite, React, Tailwind, IPC, SQLite, CI, electron-builder
 2. Accounts & auth — autodiscovery, Google/Microsoft OAuth, password accounts
 3. IMAP provider + sync engine + 3-pane UI
 4. Compose & send — SMTP, MIME, drafts, outbox with undo
@@ -56,4 +69,4 @@ SQLite (WAL) via `better-sqlite3` + drizzle. Hand-written forward-only SQL migra
 7. AI foundation — provider abstraction (Claude + local OpenAI-compatible), local-server auto-discovery, tool registry, privacy modes
 8. AI features — summarize, triage, drafting, extraction, NL rules, ask-my-mail, agent panel
 9. MCP server — stdio + localhost HTTP
-10. Hardening & release
+10. Hardening & release — integration/e2e tests, docs, 1.0.0

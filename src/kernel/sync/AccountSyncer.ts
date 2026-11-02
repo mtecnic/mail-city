@@ -34,6 +34,8 @@ export interface SyncerDeps {
   dataDir: string
   settings: () => { initialWindowDays: number; pollIntervalMinutes: number }
   onAccountError: (error: string | null) => void
+  /** Test hook: supply a fake provider instead of a real IMAP connection. */
+  createProvider?: (accountId: string, server: ServerConfig) => ImapProvider
 }
 
 const HEADER_BATCH = 500
@@ -64,7 +66,7 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
     super()
     this.log = createLogger(`sync:${account.email}`)
     const server: ServerConfig = { host: account.imapHost, port: account.imapPort, tls: account.imapTls as ServerConfig['tls'] }
-    this.provider = new ImapProvider(account.id, server, deps.getCredentials)
+    this.provider = deps.createProvider ? deps.createProvider(account.id, server) : new ImapProvider(account.id, server, deps.getCredentials)
     this.provider.on('exists', (path) => this.onServerChange(path))
     this.provider.on('expunge', (path) => this.onServerChange(path))
     this.provider.on('flags', (path) => this.onServerChange(path))
@@ -184,7 +186,8 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
     }
   }
 
-  private async tick(): Promise<void> {
+  /** Run one sync pass now (used by tests and "sync now"). */
+  async tick(): Promise<void> {
     await this.mutex.run(async () => {
       this.setState('syncing')
       await this.replayOps()
@@ -299,8 +302,9 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
           }
         }
       }
-      // Deletions: compare server UID list to ours when counts disagree (or periodically).
-      if (mb.exists !== local.size + newIds.length || Math.random() < 0.1) {
+      // Deletions: diff the server's UID list against ours. `exists` can't be used
+      // as a shortcut because we only cache a date window of the folder.
+      {
         const serverUids = new Set(await this.provider.allUids())
         const gone = [...local.keys()].filter((u) => u > 0 && !serverUids.has(u))
         if (gone.length) {

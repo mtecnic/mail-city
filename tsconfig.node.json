@@ -9,6 +9,7 @@
     "src/shared/**/*",
     "tests/**/*"
   ],
+  "exclude": ["tests/unit/sanitize.test.ts"],
   "compilerOptions": {
     "composite": true,
     "strict": true,

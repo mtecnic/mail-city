@@ -20,7 +20,7 @@ export function createMainWindow(kernel: Kernel, opts: { hidden?: boolean } = {}
     title: 'Mail City',
     icon: app.isPackaged ? join(process.resourcesPath, 'resources', 'icon.png') : join(app.getAppPath(), 'resources', 'icon.png'),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,

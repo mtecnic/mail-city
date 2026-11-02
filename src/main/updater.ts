@@ -1,5 +1,7 @@
 import { app } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import updater from 'electron-updater'
+// electron-updater is CommonJS; the main bundle is ESM, so pull the named export off the default.
+const { autoUpdater } = updater
 import log from 'electron-log/main'
 import { emit } from './ipc/router'
 

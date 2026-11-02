@@ -30,6 +30,10 @@ setLogSink({
   }
 })
 
+// ---- profile override (tests, portable installs) ---------------------------
+const userDataArg = process.argv.find((a) => a.startsWith('--user-data-dir='))
+if (userDataArg) app.setPath('userData', userDataArg.slice('--user-data-dir='.length))
+
 // ---- headless MCP mode -----------------------------------------------------
 if (process.argv.includes('--mcp')) {
   void runMcpStdio().catch((e) => {

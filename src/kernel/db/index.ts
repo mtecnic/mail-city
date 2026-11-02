@@ -50,7 +50,14 @@ export function openDb(opts: OpenDbOptions): DbHandle {
     db,
     raw,
     hasVec,
-    close: () => raw.close()
+    close: () => {
+      try {
+        raw.pragma('optimize')
+      } catch {
+        /* ignore */
+      }
+      raw.close()
+    }
   }
 }
 
