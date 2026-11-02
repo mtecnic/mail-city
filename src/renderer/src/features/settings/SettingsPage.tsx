@@ -6,9 +6,11 @@ import { GeneralSettings } from './GeneralSettings'
 import { IdentitiesSettings } from './IdentitiesSettings'
 import { RulesSettings } from './RulesSettings'
 import { ContactsSettings } from './ContactsSettings'
+import { AiSettings } from './AiSettings'
 
 const SECTIONS = [
   { id: 'accounts', label: 'Accounts' },
+  { id: 'ai', label: 'AI' },
   { id: 'identities', label: 'Identities & signatures' },
   { id: 'rules', label: 'Rules' },
   { id: 'contacts', label: 'Contacts' },
@@ -35,6 +37,7 @@ export function SettingsPage({ onBack, initial = 'accounts' }: { onBack: () => v
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-3xl">
           {section === 'accounts' && <AccountsSettings />}
+          {section === 'ai' && <AiSettings />}
           {section === 'identities' && <IdentitiesSettings />}
           {section === 'rules' && <RulesSettings />}
           {section === 'contacts' && <ContactsSettings />}

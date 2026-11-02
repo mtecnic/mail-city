@@ -27,6 +27,16 @@ import { ContactStore } from './contacts/ContactStore'
 import { RulesEngine } from './rules/RulesEngine'
 import { SnoozeService } from './mail/Snooze'
 import { quoteMessage } from './mail/compose'
+import { SecretVault } from './utils/vault'
+import { AiService } from './ai/AiService'
+import { buildMailTools } from './ai/tools/mailTools'
+import type { ToolRegistry } from './ai/tools/registry'
+import { TypedEmitter } from './utils/emitter'
+
+export type KernelEvents = {
+  /** A draft was created by a tool/agent and should be opened in the UI. */
+  draftCreated: [draftId: string]
+}
 import type { ServerConfig } from '@shared/schemas/account'
 import type { AccountSummary } from '@shared/schemas/account'
 
@@ -73,6 +83,10 @@ export class Kernel {
   readonly contacts: ContactStore
   readonly rules: RulesEngine
   readonly snooze: SnoozeService
+  readonly vault: SecretVault
+  readonly ai: AiService
+  readonly tools: ToolRegistry
+  readonly events = new TypedEmitter<KernelEvents>()
 
   constructor(readonly options: KernelOptions) {
     this.dbHandle = openDb({ path: options.dbPath ?? `${options.dataDir}/mail-city.sqlite` })
@@ -92,6 +106,9 @@ export class Kernel {
     this.contacts = new ContactStore(this.db)
     this.rules = new RulesEngine(this.db, this.store, this.mail)
     this.snooze = new SnoozeService(this.db, this.store)
+    this.vault = new SecretVault(this.settings, options.cipher)
+    this.ai = new AiService(this.db, this.settings, this.vault)
+    this.tools = buildMailTools(this)
     this.wireEvents()
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
     if (options.autoSync !== false) {

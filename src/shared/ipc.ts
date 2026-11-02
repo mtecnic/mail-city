@@ -15,6 +15,7 @@ import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth
 import { FolderSchema, ListMessagesQuerySchema, MessageDetailSchema, MessageFlagsSchema, MessageListItemSchema } from './schemas/mail'
 import { DraftAttachmentSchema, DraftInputSchema, DraftSchema, IdentitySchema, OutboxItemSchema, ReplyModeSchema, ReplyTemplateSchema, SignatureSchema } from './schemas/compose'
 import { RuleInputSchema, RuleSchema } from './schemas/rules'
+import { AiFeatureSchema, AiModelInfoSchema, AiProviderConfigSchema, AiRunSchema, AiSettingsSchema, LocalServerProbeSchema, ModelCapabilitiesSchema } from './schemas/ai'
 
 export const ContactSchema = z.object({
   id: z.string(),
@@ -171,7 +172,22 @@ export const channels = {
   'update.status': defineChannel(z.void(), UpdateStatusSchema),
   'update.check': defineChannel(z.void(), z.void()),
   'update.install': defineChannel(z.void(), z.void()),
-  'app.openLogs': defineChannel(z.void(), z.void())
+  'app.openLogs': defineChannel(z.void(), z.void()),
+
+  // ---- AI ------------------------------------------------------------------
+  'ai.settings.get': defineChannel(z.void(), AiSettingsSchema),
+  'ai.settings.set': defineChannel(z.record(z.string(), z.unknown()), AiSettingsSchema),
+  'ai.provider.upsert': defineChannel(AiProviderConfigSchema.partial().extend({ kind: AiProviderConfigSchema.shape.kind, apiKey: z.string().optional() }), AiProviderConfigSchema),
+  'ai.provider.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+  'ai.provider.setKey': defineChannel(z.object({ id: z.string(), apiKey: z.string().nullable() }), z.void()),
+  'ai.provider.health': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), detail: z.string().optional(), version: z.string().optional() })),
+  'ai.models.list': defineChannel(z.object({ providerId: z.string() }), z.array(AiModelInfoSchema)),
+  'ai.models.probe': defineChannel(z.object({ providerId: z.string(), model: z.string() }), ModelCapabilitiesSchema),
+  'ai.models.pull': defineChannel(z.object({ providerId: z.string(), model: z.string() }), z.void()),
+  'ai.discoverLocal': defineChannel(z.object({ input: z.string(), apiKey: z.string().optional() }), z.array(LocalServerProbeSchema)),
+  'ai.suggestRoutes': defineChannel(z.object({ providerId: z.string() }), z.partialRecord(AiFeatureSchema, z.object({ providerId: z.string(), model: z.string() }))),
+  'ai.runs.list': defineChannel(z.object({ limit: z.number().int().optional() }), z.object({ runs: z.array(AiRunSchema), totals: z.object({ runs: z.number(), costUsd: z.number(), inputTokens: z.number(), outputTokens: z.number() }) })),
+  'ai.tools.list': defineChannel(z.void(), z.array(z.object({ name: z.string(), description: z.string(), risk: z.enum(['read', 'write', 'destructive']) })))
 } as const
 
 
@@ -205,7 +221,10 @@ export const events = {
   'app.openSettings': z.void(),
   'app.openMessage': z.object({ id: z.string(), accountId: z.string(), folderId: z.string() }),
   'app.openOutbox': z.object({ id: z.string() }),
-  'update.status': UpdateStatusSchema
+  'update.status': UpdateStatusSchema,
+  'ai.settings.changed': AiSettingsSchema,
+  'ai.pullProgress': z.object({ providerId: z.string(), model: z.string(), status: z.string(), completed: z.number().optional(), total: z.number().optional(), done: z.boolean().optional(), error: z.string().optional() }),
+  'drafts.created': z.object({ id: z.string() })
 } as const
 
 export type Events = typeof events

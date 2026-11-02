@@ -4,6 +4,7 @@ import { currentUpdateStatus, checkForUpdates, installUpdateNow } from '../updat
 import { readFile, copyFile } from 'node:fs/promises'
 import type { Kernel } from '@kernel/index'
 import type { AppSettingsPatch } from '@shared/schemas/settings'
+import type { AiSettingsPatch } from '@shared/schemas/ai'
 import { handle, emit } from './router'
 import { SavedSearchesSchema } from '@shared/ipc'
 
@@ -171,6 +172,30 @@ export function registerIpc(kernel: Kernel): void {
   handle('app.openLogs', async () => {
     await shell.openPath(app.getPath('logs'))
   })
+
+  // ---- AI ------------------------------------------------------------------
+  handle('ai.settings.get', () => kernel.ai.get())
+  handle('ai.settings.set', (patch) => kernel.ai.set(patch as AiSettingsPatch))
+  handle('ai.provider.upsert', ({ apiKey, ...cfg }) => {
+    const p = kernel.ai.upsertProvider(cfg)
+    if (apiKey !== undefined) kernel.ai.setApiKey(p.id, apiKey || null)
+    return kernel.ai.get().providers.find((x) => x.id === p.id) ?? p
+  })
+  handle('ai.provider.remove', ({ id }) => kernel.ai.removeProvider(id))
+  handle('ai.provider.setKey', ({ id, apiKey }) => kernel.ai.setApiKey(id, apiKey))
+  handle('ai.provider.health', ({ id }) => kernel.ai.healthcheck(id))
+  handle('ai.models.list', ({ providerId }) => kernel.ai.listModels(providerId))
+  handle('ai.models.probe', ({ providerId, model }) => kernel.ai.probeModel(providerId, model))
+  handle('ai.models.pull', ({ providerId, model }) => {
+    void kernel.ai.pullModel(providerId, model).catch(() => {})
+  })
+  handle('ai.discoverLocal', ({ input, apiKey }) => kernel.ai.discoverLocal(input, apiKey))
+  handle('ai.suggestRoutes', ({ providerId }) => kernel.ai.suggestRoutes(providerId))
+  handle('ai.runs.list', ({ limit }) => ({ runs: kernel.ai.runs(limit), totals: kernel.ai.runTotals() }))
+  handle('ai.tools.list', () => kernel.tools.list().map((t) => ({ name: t.name, description: t.description, risk: t.risk })))
+  kernel.ai.on('changed', (s) => emit('ai.settings.changed', s))
+  kernel.ai.on('pullProgress', (p) => emit('ai.pullProgress', p))
+  kernel.events.on('draftCreated', (id) => emit('drafts.created', { id }))
 
   kernel.outbox.on('changed', () => emit('outbox.changed', undefined))
   kernel.outbox.on('sent', (id) => emit('outbox.sent', { id }))
