@@ -14,6 +14,21 @@ import { AccountSummarySchema, AccountTypeSchema, ServerConfigSchema } from './s
 import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth'
 import { FolderSchema, ListMessagesQuerySchema, MessageDetailSchema, MessageFlagsSchema, MessageListItemSchema } from './schemas/mail'
 import { DraftAttachmentSchema, DraftInputSchema, DraftSchema, IdentitySchema, OutboxItemSchema, ReplyModeSchema, ReplyTemplateSchema, SignatureSchema } from './schemas/compose'
+import { RuleInputSchema, RuleSchema } from './schemas/rules'
+
+export const ContactSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  emails: z.array(z.string()),
+  primaryEmail: z.string(),
+  lastSeenAt: z.string().nullable(),
+  sendCount: z.number(),
+  receiveCount: z.number(),
+  source: z.string(),
+  notes: z.string().nullable()
+})
+export const SavedSearchSchema = z.object({ id: z.string(), name: z.string(), query: z.string() })
+export const SavedSearchesSchema = z.array(SavedSearchSchema).default([])
 
 export function defineChannel<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(input: I, output: O) {
   return { input, output }
@@ -118,7 +133,27 @@ export const channels = {
   'identities.remove': defineChannel(z.object({ id: z.string() }), z.void()),
   'signatures.list': defineChannel(z.void(), z.array(SignatureSchema)),
   'signatures.save': defineChannel(z.object({ id: z.string().optional(), name: z.string(), html: z.string(), text: z.string() }), SignatureSchema),
-  'signatures.delete': defineChannel(z.object({ id: z.string() }), z.void())
+  'signatures.delete': defineChannel(z.object({ id: z.string() }), z.void()),
+
+  // ---- search / contacts / rules / snooze ----------------------------------
+  'search.run': defineChannel(z.object({ query: z.string(), accountId: z.string().optional(), folderId: z.string().optional(), limit: z.number().int().optional(), offset: z.number().int().optional() }), z.array(MessageListItemSchema)),
+  'search.saved.list': defineChannel(z.void(), SavedSearchesSchema),
+  'search.saved.set': defineChannel(SavedSearchesSchema, z.void()),
+  'contacts.list': defineChannel(z.void(), z.array(ContactSchema)),
+  'contacts.suggest': defineChannel(z.object({ prefix: z.string(), limit: z.number().int().optional() }), z.array(z.object({ id: z.string(), name: z.string(), address: z.string(), score: z.number() }))),
+  'contacts.save': defineChannel(z.object({ id: z.string().optional(), name: z.string(), emails: z.array(z.string()), notes: z.string().nullable().optional() }), ContactSchema),
+  'contacts.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+  'contacts.merge': defineChannel(z.object({ ids: z.array(z.string()).min(2) }), ContactSchema.nullable()),
+  'contacts.duplicates': defineChannel(z.void(), z.array(z.array(ContactSchema))),
+  'contacts.import': defineChannel(z.void(), z.object({ imported: z.number() })),
+  'contacts.export': defineChannel(z.void(), z.object({ ok: z.boolean(), path: z.string().optional() })),
+  'rules.list': defineChannel(z.void(), z.array(RuleSchema)),
+  'rules.save': defineChannel(RuleInputSchema, RuleSchema),
+  'rules.remove': defineChannel(z.object({ id: z.string() }), z.void()),
+  'rules.reorder': defineChannel(z.object({ ids: z.array(z.string()) }), z.void()),
+  'rules.applyNow': defineChannel(z.object({ folderId: z.string().optional(), ruleId: z.string().optional() }), z.object({ affected: z.number() })),
+  'messages.snooze': defineChannel(z.object({ ids: z.array(z.string()).min(1), until: z.string() }), z.void()),
+  'messages.unsnooze': defineChannel(z.object({ ids: z.array(z.string()).min(1) }), z.void())
 } as const
 
 export type Channels = typeof channels
@@ -142,7 +177,9 @@ export const events = {
   'messages.bodyFetched': z.object({ id: z.string() }),
   'outbox.changed': z.void(),
   'outbox.sent': z.object({ id: z.string() }),
-  'outbox.failed': z.object({ id: z.string(), error: z.string() })
+  'outbox.failed': z.object({ id: z.string(), error: z.string() }),
+  'rules.changed': z.void(),
+  'snooze.woke': z.object({ ids: z.array(z.string()) })
 } as const
 
 export type Events = typeof events

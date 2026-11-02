@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, PenSquare, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, Clock, type LucideIcon } from 'lucide-react'
+import { Archive, ChevronDown, ChevronRight, File, Folder as FolderIcon, Inbox, Mail, PenSquare, Plus, RefreshCw, Send, Settings, Star, Trash2, AlertOctagon, Clock, AlarmClock, Search, type LucideIcon } from 'lucide-react'
+import { useQuery as useRQ } from '@tanstack/react-query'
 import { invoke, useMailEvent } from '@renderer/lib/api'
 import { Button, cn } from '@renderer/components/ui'
 import { useUi, type MailboxSelection } from '@renderer/store/ui'
@@ -20,6 +21,7 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
   useMailEvent('sync.status', (e) => setStatus((s) => ({ ...s, [e.accountId]: { state: e.state, detail: e.detail } })))
   const outbox = useOutbox()
   const { newMessage } = useComposeActions()
+  const savedSearches = useRQ({ queryKey: ['savedSearches'], queryFn: () => invoke('search.saved.list') })
 
   const unifiedUnread = folders.data?.filter((f) => f.specialUse === 'inbox').reduce((n, f) => n + f.unreadCount, 0) ?? 0
   const isSel = (s: MailboxSelection) => JSON.stringify(s) === JSON.stringify(mailbox)
@@ -47,8 +49,18 @@ export function Sidebar({ onAddAccount, onSettings }: { onAddAccount: () => void
           <NavRow icon={Star} label="Starred" active={isSel({ kind: 'unified', specialUse: 'flagged' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'flagged' })} />
           <NavRow icon={Send} label="All sent" active={isSel({ kind: 'unified', specialUse: 'sent' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'sent' })} />
           <NavRow icon={File} label="All drafts" active={isSel({ kind: 'unified', specialUse: 'drafts' })} onClick={() => setMailbox({ kind: 'unified', specialUse: 'drafts' })} />
+          <NavRow icon={AlarmClock} label="Snoozed" active={isSel({ kind: 'snoozed' })} onClick={() => setMailbox({ kind: 'snoozed' })} />
           <NavRow icon={Clock} label="Outbox & local drafts" count={outbox.data?.length} active={isSel({ kind: 'outbox' })} onClick={() => setMailbox({ kind: 'outbox' })} />
         </div>
+
+        {(savedSearches.data?.length ?? 0) > 0 && (
+          <div className="space-y-0.5">
+            <div className="px-2 text-xs font-semibold text-muted">Saved searches</div>
+            {savedSearches.data!.map((s) => (
+              <NavRow key={s.id} icon={Search} label={s.name} active={isSel({ kind: 'search', query: s.query })} onClick={() => setMailbox({ kind: 'search', query: s.query })} />
+            ))}
+          </div>
+        )}
 
         {accounts.data?.map((a) => {
           const afolders = folders.data?.filter((f) => f.accountId === a.id) ?? []

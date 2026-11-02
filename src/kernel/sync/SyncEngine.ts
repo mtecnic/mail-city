@@ -13,6 +13,7 @@ export type EngineEvents = {
   foldersChanged: [accountId: string]
   messagesChanged: [accountId: string, folderId: string]
   newMessages: [accountId: string, folderId: string, messageIds: string[]]
+  headersStored: [accountId: string, folderId: string, messageIds: string[]]
   bodyFetched: [messageId: string]
 }
 
@@ -99,6 +100,7 @@ export class SyncEngine extends TypedEmitter<EngineEvents> {
       syncer.on('foldersChanged', () => this.emit('foldersChanged', a.id))
       syncer.on('messagesChanged', (folderId) => this.emit('messagesChanged', a.id, folderId))
       syncer.on('newMessages', (folderId, ids) => this.emit('newMessages', a.id, folderId, ids))
+      syncer.on('headersStored', (folderId, ids) => this.emit('headersStored', a.id, folderId, ids))
       syncer.on('bodyFetched', (id) => this.emit('bodyFetched', id))
       this.syncers.set(a.id, syncer)
       this.log.info('starting syncer', { account: a.email })

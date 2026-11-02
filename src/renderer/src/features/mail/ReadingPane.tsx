@@ -7,6 +7,7 @@ import { useUi } from '@renderer/store/ui'
 import { formatFullDate, formatBytes, initials, avatarColor } from '@renderer/lib/format'
 import { sanitizeEmailHtml, textToHtml, wrapForFrame } from '@renderer/lib/sanitize'
 import { useMessage, useMailActions } from './hooks'
+import { SnoozeMenu } from './SnoozeMenu'
 import type { MessageDetail, Address } from '@shared/schemas/mail'
 
 export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'replyAll' | 'forward', m: MessageDetail) => void }) {
@@ -77,6 +78,7 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
         <Button size="sm" variant="ghost" onClick={() => actions.setFlags.mutate({ ids: [m.id], flags: { seen: !m.flags.seen } })} title="Mark unread (u)">
           <MailOpen className="size-4" />
         </Button>
+        <SnoozeMenu ids={[m.id]} />
       </div>
 
       <div className="border-b border-border px-5 py-3">

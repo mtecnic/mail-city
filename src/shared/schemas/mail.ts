@@ -44,7 +44,8 @@ export const MessageListItemSchema = z.object({
   aiCategory: z.string().nullable(),
   aiPriority: z.number().nullable(),
   threadCount: z.number(),
-  threadUnread: z.number()
+  threadUnread: z.number(),
+  snoozedUntil: z.string().nullable()
 })
 export type MessageListItem = z.output<typeof MessageListItemSchema>
 
@@ -56,7 +57,8 @@ export const ListMessagesQuerySchema = z.object({
   flaggedOnly: z.boolean().optional(),
   before: z.string().optional(),
   limit: z.number().int().min(1).max(500).optional(),
-  threadId: z.string().optional()
+  threadId: z.string().optional(),
+  snoozedOnly: z.boolean().optional()
 })
 
 export const AttachmentSchema = z.object({

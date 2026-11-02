@@ -8,6 +8,7 @@ import { AddAccountDialog } from '@renderer/features/accounts/AddAccountDialog'
 import { ComposeDock } from '@renderer/features/compose/ComposeWindow'
 import { OutboxView, UndoSendToast } from '@renderer/features/compose/OutboxView'
 import { useComposeActions } from '@renderer/features/compose/useComposeActions'
+import { SearchBar } from './SearchBar'
 
 export function MailView({ onSettings }: { onSettings: () => void }) {
   const [adding, setAdding] = useState(false)
@@ -19,6 +20,8 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const title = (() => {
     if (mailbox.kind === 'unified') return { inbox: 'All inboxes', flagged: 'Starred', sent: 'All sent', drafts: 'All drafts' }[mailbox.specialUse]
     if (mailbox.kind === 'outbox') return 'Outbox'
+    if (mailbox.kind === 'snoozed') return 'Snoozed'
+    if (mailbox.kind === 'search') return `Search: ${mailbox.query}`
     return folders.data?.find((f) => f.id === mailbox.folderId)?.name ?? ''
   })()
 
@@ -80,7 +83,8 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       ) : (
         <>
           <section className="flex w-[380px] shrink-0 flex-col border-r border-border">
-            <header className="flex h-10 items-center border-b border-border px-3 text-sm font-semibold">{title}</header>
+            <SearchBar />
+            <header className="flex h-8 items-center border-b border-border px-3 text-xs font-semibold text-muted">{title}</header>
             <MessageList />
           </section>
           <section className="flex min-w-0 flex-1 flex-col">

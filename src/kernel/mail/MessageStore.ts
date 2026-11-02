@@ -30,6 +30,7 @@ export interface MessageListItem {
   aiPriority: number | null
   threadCount: number
   threadUnread: number
+  snoozedUntil: string | null
 }
 
 export interface ListMessagesQuery {
@@ -42,6 +43,8 @@ export interface ListMessagesQuery {
   before?: string
   limit?: number
   threadId?: string
+  /** Only snoozed messages (the Snoozed view). */
+  snoozedOnly?: boolean
 }
 
 export class MessageStore {
@@ -98,6 +101,7 @@ export class MessageStore {
 
   /** Wipe cached messages for a folder (UIDVALIDITY change). */
   clearFolderMessages(folderId: string): void {
+    this.dropFts(this.db.select({ id: messages.id }).from(messages).where(eq(messages.folderId, folderId)).all().map((r) => r.id))
     this.db.delete(messages).where(eq(messages.folderId, folderId)).run()
   }
 
@@ -228,7 +232,44 @@ export class MessageStore {
         .values(attList.map((a) => ({ id: newId('att'), messageId: id, part: a.part, filename: a.filename, mimeType: a.mimeType, size: a.size, contentId: a.contentId, isInline: a.isInline })))
         .run()
     }
+    this.indexFts(id, subject, from, [...toAddresses(env.to), ...toAddresses(env.cc)], null)
     return { id, isNew: true }
+  }
+
+  // ---- full-text index ------------------------------------------------------
+
+  private indexFts(id: string, subject: string, from: Address, recipients: Address[], body: string | null): void {
+    const fmt = (a: Address) => `${a.name} ${a.address}`.trim()
+    this.db.run(sql`DELETE FROM messages_fts WHERE message_id = ${id}`)
+    this.db.run(sql`INSERT INTO messages_fts (message_id, subject, from_text, to_text, body) VALUES (${id}, ${subject}, ${fmt(from)}, ${recipients.map(fmt).join(' ')}, ${body ?? ''})`)
+  }
+
+  private dropFts(ids: string[]): void {
+    for (const id of ids) this.db.run(sql`DELETE FROM messages_fts WHERE message_id = ${id}`)
+  }
+
+  listByIds(ids: string[]): MessageListItem[] {
+    if (!ids.length) return []
+    const rows = this.db.select().from(messages).where(inArray(messages.id, ids)).all()
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    const ordered = ids.map((i) => byId.get(i)).filter((r): r is MessageRow => !!r)
+    return this.decorate(ordered)
+  }
+
+  setSnoozed(ids: string[], until: string | null): void {
+    if (ids.length) this.db.update(messages).set({ snoozedUntil: until }).where(inArray(messages.id, ids)).run()
+  }
+
+  setAiCategory(id: string, category: string | null, priority?: number | null): void {
+    this.db
+      .update(messages)
+      .set({ aiCategory: category, ...(priority !== undefined ? { aiPriority: priority } : {}) })
+      .where(eq(messages.id, id))
+      .run()
+  }
+
+  setAiSummary(id: string, summary: string | null): void {
+    this.db.update(messages).set({ aiSummary: summary }).where(eq(messages.id, id)).run()
   }
 
   updateFlags(folderId: string, uid: number, flags: Set<string>, labels?: Set<string>): string | undefined {
@@ -260,12 +301,14 @@ export class MessageStore {
       .where(and(eq(messages.folderId, folderId), inArray(messages.uid, uids)))
       .all()
     const ids = rows.map((r) => r.id)
-    if (ids.length) this.db.delete(messages).where(inArray(messages.id, ids)).run()
+    this.deleteByIds(ids)
     return ids
   }
 
   deleteByIds(ids: string[]): void {
-    if (ids.length) this.db.delete(messages).where(inArray(messages.id, ids)).run()
+    if (!ids.length) return
+    this.dropFts(ids)
+    this.db.delete(messages).where(inArray(messages.id, ids)).run()
   }
 
   /** Move a cached message to another folder locally (uid may be unknown until the server tells us). */
@@ -283,6 +326,8 @@ export class MessageStore {
       .onConflictDoUpdate({ target: messageBodies.messageId, set: { textPlain: body.textPlain, textHtml: body.textHtml, headers: body.headers, rawPath: body.rawPath ?? null, fetchedAt: now } })
       .run()
     this.db.update(messages).set({ bodyState: 'full', snippet: body.snippet }).where(eq(messages.id, messageId)).run()
+    const m = this.getMessage(messageId)
+    if (m) this.indexFts(messageId, m.subject, { name: m.fromName, address: m.fromAddr }, [...m.toList, ...m.ccList], (body.textPlain ?? '').slice(0, 200_000))
   }
 
   setAttachmentPath(attachmentId: string, localPath: string, size?: number): void {
@@ -310,7 +355,8 @@ export class MessageStore {
     if (q.unreadOnly) where.push(sql`json_extract(${messages.flags}, '$.seen') = 0` as never)
     if (q.flaggedOnly) where.push(sql`json_extract(${messages.flags}, '$.flagged') = 1` as never)
     if (q.before) where.push(lt(messages.date, q.before))
-    if (!q.threadId) where.push(or(isNull(messages.snoozedUntil), lt(messages.snoozedUntil, new Date().toISOString())) as never)
+    if (q.snoozedOnly) where.push(gt(messages.snoozedUntil, new Date().toISOString()))
+    else if (!q.threadId) where.push(or(isNull(messages.snoozedUntil), lt(messages.snoozedUntil, new Date().toISOString())) as never)
 
     if (q.specialUse && !q.folderId) {
       const folderIds = this.db
@@ -329,7 +375,10 @@ export class MessageStore {
       .orderBy(q.threadId ? messages.date : desc(messages.date))
       .limit(limit)
       .all()
+    return this.decorate(rows)
+  }
 
+  private decorate(rows: MessageRow[]): MessageListItem[] {
     const threadIds = [...new Set(rows.map((r) => r.threadId).filter((t): t is string => !!t))]
     const counts = new Map<string, { n: number; unread: number }>()
     if (threadIds.length) {
@@ -359,7 +408,8 @@ export class MessageStore {
       aiCategory: r.aiCategory,
       aiPriority: r.aiPriority,
       threadCount: r.threadId ? (counts.get(r.threadId)?.n ?? 1) : 1,
-      threadUnread: r.threadId ? (counts.get(r.threadId)?.unread ?? 0) : r.flags.seen ? 0 : 1
+      threadUnread: r.threadId ? (counts.get(r.threadId)?.unread ?? 0) : r.flags.seen ? 0 : 1,
+      snoozedUntil: r.snoozedUntil
     }))
   }
 

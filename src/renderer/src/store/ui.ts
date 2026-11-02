@@ -4,6 +4,8 @@ export type MailboxSelection =
   | { kind: 'unified'; specialUse: 'inbox' | 'flagged' | 'sent' | 'drafts' }
   | { kind: 'folder'; accountId: string; folderId: string }
   | { kind: 'outbox' }
+  | { kind: 'snoozed' }
+  | { kind: 'search'; query: string }
 
 interface UiState {
   mailbox: MailboxSelection

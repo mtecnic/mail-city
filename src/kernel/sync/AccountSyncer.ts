@@ -20,7 +20,10 @@ export type SyncerEvents = {
   status: [state: SyncState, detail?: string]
   foldersChanged: []
   messagesChanged: [folderId: string]
+  /** New messages that arrived after the initial import (notifications, rules). */
   newMessages: [folderId: string, messageIds: string[]]
+  /** Every newly cached header, including during the initial import (contact harvesting, indexing). */
+  headersStored: [folderId: string, messageIds: string[]]
   bodyFetched: [messageId: string]
 }
 
@@ -337,6 +340,7 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
     store.refreshFolderCounts(folder.id)
     this.emit('foldersChanged')
     if (changed) this.emit('messagesChanged', folder.id)
+    if (newIds.length) this.emit('headersStored', folder.id, newIds)
     if (newIds.length && !isInitial) this.emit('newMessages', folder.id, newIds)
     this.log.info('folder synced', { path: folder.path, new: newIds.length, ms: Date.now() - started })
   }

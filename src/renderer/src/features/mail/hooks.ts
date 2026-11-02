@@ -14,6 +14,7 @@ export function useFolders() {
 export function listQueryFor(sel: MailboxSelection): ChannelInput<'messages.list'> {
   if (sel.kind === 'unified') return sel.specialUse === 'flagged' ? { flaggedOnly: true, specialUse: 'inbox' } : { specialUse: sel.specialUse }
   if (sel.kind === 'folder') return { accountId: sel.accountId, folderId: sel.folderId }
+  if (sel.kind === 'snoozed') return { snoozedOnly: true }
   return { limit: 1, folderId: '__none__' }
 }
 
@@ -30,11 +31,15 @@ export function useMessageList(sel: MailboxSelection) {
       }),
     [qc, sel]
   )
+  const isSearch = sel.kind === 'search'
   return useInfiniteQuery({
-    queryKey: key,
+    queryKey: isSearch ? ['messages', 'search', sel.query] : key,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => invoke('messages.list', { ...base, before: pageParam, limit: PAGE }),
-    getNextPageParam: (last) => (last.length < PAGE ? undefined : last[last.length - 1]?.date)
+    queryFn: ({ pageParam }) =>
+      isSearch
+        ? invoke('search.run', { query: sel.query, limit: PAGE, offset: pageParam ? Number(pageParam) : 0 })
+        : invoke('messages.list', { ...base, before: pageParam, limit: PAGE }),
+    getNextPageParam: (last, pages) => (last.length < PAGE ? undefined : isSearch ? String(pages.length * PAGE) : last[last.length - 1]?.date)
   })
 }
 

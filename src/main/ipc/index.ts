@@ -3,6 +3,7 @@ import { readFile, copyFile } from 'node:fs/promises'
 import type { Kernel } from '@kernel/index'
 import type { AppSettingsPatch } from '@shared/schemas/settings'
 import { handle, emit } from './router'
+import { SavedSearchesSchema } from '@shared/ipc'
 
 const DANGEROUS_EXT = /\.(exe|msi|bat|cmd|com|scr|ps1|vbs|js|jse|wsf|wsh|hta|cpl|jar|lnk|reg|pif)$/i
 
@@ -119,6 +120,43 @@ export function registerIpc(kernel: Kernel): void {
   handle('signatures.list', () => kernel.identities.listSignatures())
   handle('signatures.save', (s) => kernel.identities.saveSignature(s))
   handle('signatures.delete', ({ id }) => kernel.identities.deleteSignature(id))
+  // ---- search / contacts / rules / snooze ----------------------------------
+  handle('search.run', ({ query, ...opts }) => kernel.search.search(query, opts))
+  handle('search.saved.list', () => kernel.settings.getValue('savedSearches', SavedSearchesSchema))
+  handle('search.saved.set', (list) => kernel.settings.setValue('savedSearches', list))
+  handle('contacts.list', () => kernel.contacts.list())
+  handle('contacts.suggest', ({ prefix, limit }) => kernel.contacts.suggest(prefix, limit))
+  handle('contacts.save', (c) => kernel.contacts.save(c))
+  handle('contacts.remove', ({ id }) => kernel.contacts.remove(id))
+  handle('contacts.merge', ({ ids }) => kernel.contacts.merge(ids) ?? null)
+  handle('contacts.duplicates', () => kernel.contacts.duplicates())
+  handle('contacts.import', async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'vCard', extensions: ['vcf', 'vcard'] }] })
+    if (r.canceled || !r.filePaths[0]) return { imported: 0 }
+    const text = await readFile(r.filePaths[0], 'utf8')
+    return { imported: kernel.contacts.importVcf(text) }
+  })
+  handle('contacts.export', async () => {
+    const r = await dialog.showSaveDialog({ defaultPath: 'contacts.vcf', filters: [{ name: 'vCard', extensions: ['vcf'] }] })
+    if (r.canceled || !r.filePath) return { ok: false }
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(r.filePath, kernel.contacts.exportVcf(), 'utf8')
+    return { ok: true, path: r.filePath }
+  })
+  handle('rules.list', () => kernel.rules.list())
+  handle('rules.save', (r) => kernel.rules.save(r))
+  handle('rules.remove', ({ id }) => kernel.rules.remove(id))
+  handle('rules.reorder', ({ ids }) => kernel.rules.reorder(ids))
+  handle('rules.applyNow', async (o) => ({ affected: await kernel.rules.applyToExisting(o) }))
+  handle('messages.snooze', ({ ids, until }) => kernel.snooze.snooze(ids, new Date(until)))
+  handle('messages.unsnooze', ({ ids }) => kernel.snooze.unsnooze(ids))
+  kernel.rules.on('changed', () => emit('rules.changed', undefined))
+  kernel.rules.on('applied', () => emit('messages.changed', { accountId: '', folderId: '' }))
+  kernel.snooze.on('woke', (ids) => {
+    emit('snooze.woke', { ids })
+    emit('messages.changed', { accountId: '', folderId: '' })
+  })
+
   kernel.outbox.on('changed', () => emit('outbox.changed', undefined))
   kernel.outbox.on('sent', (id) => emit('outbox.sent', { id }))
   kernel.outbox.on('failed', (id, error) => emit('outbox.failed', { id, error }))

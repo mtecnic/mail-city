@@ -22,6 +22,11 @@ import { IdentityStore } from './mail/IdentityStore'
 import { DraftStore } from './mail/DraftStore'
 import { OutboxService } from './mail/Outbox'
 import { ComposeService } from './mail/ComposeService'
+import { SearchService } from './search/SearchService'
+import { ContactStore } from './contacts/ContactStore'
+import { RulesEngine } from './rules/RulesEngine'
+import { SnoozeService } from './mail/Snooze'
+import { quoteMessage } from './mail/compose'
 import type { ServerConfig } from '@shared/schemas/account'
 import type { AccountSummary } from '@shared/schemas/account'
 
@@ -64,6 +69,10 @@ export class Kernel {
   readonly drafts: DraftStore
   readonly outbox: OutboxService
   readonly compose: ComposeService
+  readonly search: SearchService
+  readonly contacts: ContactStore
+  readonly rules: RulesEngine
+  readonly snooze: SnoozeService
 
   constructor(readonly options: KernelOptions) {
     this.dbHandle = openDb({ path: options.dbPath ?? `${options.dataDir}/mail-city.sqlite` })
@@ -79,11 +88,54 @@ export class Kernel {
     this.drafts = new DraftStore(this.db)
     this.outbox = new OutboxService(this.db, this.accounts, this.tokens, this.settings, this.store, this.mail, this.sync, this.identities, this.drafts, options.dataDir)
     this.compose = new ComposeService(this.mail, this.identities, this.drafts, this.store, this.sync, options.dataDir)
+    this.search = new SearchService(this.dbHandle.raw, this.store, this.accounts)
+    this.contacts = new ContactStore(this.db)
+    this.rules = new RulesEngine(this.db, this.store, this.mail)
+    this.snooze = new SnoozeService(this.db, this.store)
+    this.wireEvents()
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
     if (options.autoSync !== false) {
       this.sync.start()
       this.outbox.start()
+      this.snooze.start()
     }
+  }
+
+  private wireEvents(): void {
+    // Contact harvesting for every cached header.
+    this.sync.on('headersStored', (_accountId, folderId, ids) => {
+      const folder = this.store.getFolder(folderId)
+      const outgoing = folder?.specialUse === 'sent' || folder?.specialUse === 'drafts'
+      for (const id of ids) {
+        const m = this.store.getMessage(id)
+        if (!m) continue
+        const when = new Date(m.date)
+        if (outgoing) this.contacts.harvest([...m.toList, ...m.ccList, ...m.bccList], 'sent', when)
+        else this.contacts.harvest([{ name: m.fromName, address: m.fromAddr }], 'received', when)
+      }
+    })
+    // Rules on genuinely new mail.
+    this.sync.on('newMessages', (_accountId, folderId, ids) => {
+      const folder = this.store.getFolder(folderId)
+      if (folder?.specialUse === 'inbox' || folder?.specialUse === null) void this.rules.run(ids)
+    })
+    // Rule action "forward": compose a forward and queue it.
+    this.rules.setForwardHandler(async (msg, to) => {
+      const detail = await this.mail.get(msg.id)
+      const q = quoteMessage(detail, 'forward')
+      const identity = this.identities.defaultFor(msg.accountId)
+      const draft = this.drafts.save({
+        accountId: msg.accountId,
+        identityId: identity?.id ?? null,
+        to: [{ name: '', address: to }],
+        subject: /^fwd?:/i.test(detail.subject) ? detail.subject : `Fwd: ${detail.subject}`,
+        html: q.html,
+        text: q.text,
+        inReplyToMessageId: msg.id,
+        replyMode: 'forward'
+      })
+      await this.outbox.send(draft)
+    })
   }
 
   get db() {
@@ -125,6 +177,7 @@ export class Kernel {
   }
 
   async shutdown(): Promise<void> {
+    this.snooze.stop()
     this.outbox.stop()
     await this.sync.stop()
     this.dbHandle.close()

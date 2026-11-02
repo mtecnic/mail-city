@@ -4,10 +4,14 @@ import { cn } from '@renderer/components/ui'
 import { AccountsSettings } from './AccountsSettings'
 import { GeneralSettings } from './GeneralSettings'
 import { IdentitiesSettings } from './IdentitiesSettings'
+import { RulesSettings } from './RulesSettings'
+import { ContactsSettings } from './ContactsSettings'
 
 const SECTIONS = [
   { id: 'accounts', label: 'Accounts' },
   { id: 'identities', label: 'Identities & signatures' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'contacts', label: 'Contacts' },
   { id: 'general', label: 'General' }
 ] as const
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -32,6 +36,8 @@ export function SettingsPage({ onBack, initial = 'accounts' }: { onBack: () => v
         <div className="mx-auto max-w-3xl">
           {section === 'accounts' && <AccountsSettings />}
           {section === 'identities' && <IdentitiesSettings />}
+          {section === 'rules' && <RulesSettings />}
+          {section === 'contacts' && <ContactsSettings />}
           {section === 'general' && <GeneralSettings />}
         </div>
       </div>
