@@ -41,4 +41,4 @@ Tool results are compact and token-aware (snippets by default, bodies truncated 
 
 ## MCP
 
-See `docs/MCP.md` (Phase 9).
+See `docs/MCP.md`.

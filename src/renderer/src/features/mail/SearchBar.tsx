@@ -4,6 +4,7 @@ import { Search, X, Save } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { useUi } from '@renderer/store/ui'
 import { cn } from '@renderer/components/ui'
+import { promptDialog } from '@renderer/components/dialogs'
 
 export function SearchBar() {
   const { mailbox, setMailbox } = useUi()
@@ -64,8 +65,8 @@ export function SearchBar() {
         <button
           className="rounded p-1.5 text-muted hover:bg-hover hover:text-fg"
           title="Save search"
-          onClick={() => {
-            const name = window.prompt('Name this search', text.slice(0, 40))
+          onClick={async () => {
+            const name = await promptDialog({ title: 'Save search', label: 'Name', defaultValue: text.slice(0, 40), okLabel: 'Save' })
             if (!name) return
             setSaved.mutate([...(saved.data ?? []), { id: `ss_${Date.now().toString(36)}`, name, query: text.trim() }])
           }}

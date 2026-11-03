@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlarmClock } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui'
+import { promptDialog } from '@renderer/components/dialogs'
 import { useUi } from '@renderer/store/ui'
 
 function preset(kind: 'laterToday' | 'tomorrow' | 'thisWeekend' | 'nextWeek'): Date {
@@ -64,11 +65,18 @@ export function SnoozeMenu({ ids, onDone }: { ids: string[]; onDone?: () => void
           })}
           <button
             className="w-full px-3 py-1.5 text-left hover:bg-hover"
-            onClick={() => {
-              const v = window.prompt('Snooze until (YYYY-MM-DD HH:MM)')
+            onClick={async () => {
+              const v = await promptDialog({
+                title: 'Snooze until',
+                label: 'Date and time',
+                placeholder: 'YYYY-MM-DD HH:MM',
+                validate: (s) => {
+                  const d = new Date(s)
+                  return Number.isNaN(d.getTime()) ? 'Enter a date like 2026-11-03 09:00' : d.getTime() <= Date.now() ? 'Pick a time in the future' : null
+                }
+              })
               if (!v) return
-              const d = new Date(v)
-              if (!Number.isNaN(d.getTime()) && d.getTime() > Date.now()) snooze.mutate(d)
+              snooze.mutate(new Date(v))
             }}
           >
             Pick date & time…
