@@ -6,6 +6,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Link as LinkIcon, Quote, RemoveFormatting } from 'lucide-react'
 import { cn } from '@renderer/components/ui'
 import { sanitizeEmailHtml } from '@renderer/lib/sanitize'
+import { promptDialog } from '@renderer/components/dialogs'
 
 export function useComposeEditor(initialHtml: string, onReady?: (e: TipTapEditor) => void) {
   return useEditor({
@@ -37,9 +38,9 @@ export function EditorToolbar({ editor }: { editor: TipTapEditor | null }) {
       {btn(editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), List, 'Bullet list')}
       {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), ListOrdered, 'Numbered list')}
       {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), Quote, 'Quote')}
-      {btn(editor.isActive('link'), () => {
+      {btn(editor.isActive('link'), async () => {
         const prev = editor.getAttributes('link')['href'] as string | undefined
-        const url = window.prompt('Link URL', prev ?? 'https://')
+        const url = await promptDialog({ title: prev ? 'Edit link' : 'Insert link', label: 'URL', defaultValue: prev ?? 'https://', placeholder: 'https://example.com' })
         if (url === null) return
         if (!url) editor.chain().focus().unsetLink().run()
         else editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()

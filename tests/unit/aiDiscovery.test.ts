@@ -92,3 +92,15 @@ describe('ToolRegistry', () => {
     expect(reg.list({ maxRisk: 'read' }).map((t) => t.name)).toEqual(['echo'])
   })
 })
+
+describe('privacy: isLocal', () => {
+  const local = (u: string) => new OpenAICompatProvider({ id: 'x', label: u, baseUrl: u, serverKind: 'openai-compat' }).isLocal
+  it('treats loopback, LAN ranges and local names as local', () => {
+    for (const u of ['http://localhost:11434', 'http://127.0.0.1:8000', 'http://[::1]:8080', 'http://10.0.0.5:8000', 'http://192.168.1.20:1234', 'http://172.16.4.4:8000', 'http://host.docker.internal:11434', 'http://gpu-box:8000', 'http://ollama.lan:11434', 'https://server.local', '192.168.1.20:11434'])
+      expect(local(u), u).toBe(true)
+  })
+  it('treats public IPs and public domains as cloud', () => {
+    for (const u of ['http://203.0.113.5:8000', 'http://8.8.8.8', 'https://api.example.com', 'http://172.32.0.1:8000', 'https://my-vllm.ts.net'])
+      expect(local(u), u).toBe(false)
+  })
+})

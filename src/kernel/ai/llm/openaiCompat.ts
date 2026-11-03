@@ -49,8 +49,24 @@ export class OpenAICompatProvider implements LLMProvider {
     this.fetchImpl = opts.fetchImpl ?? fetch
   }
 
+  /**
+   * "Local" means the content stays on this machine or the LAN: loopback, link-local,
+   * RFC 1918 ranges, Docker's host alias, single-label hostnames and `.local`/`.lan`/`.internal`
+   * names. A public IP or a public domain is treated as cloud for the privacy policy.
+   */
   get isLocal(): boolean {
-    return /^(https?:\/\/)?(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\]|host\.docker\.internal)/i.test(this.baseUrl) || !/^https?:\/\/[^/]+\.[a-z]{2,}/i.test(this.baseUrl)
+    let host: string
+    try {
+      host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(this.baseUrl) ? this.baseUrl : `http://${this.baseUrl}`).hostname.toLowerCase()
+    } catch {
+      return false
+    }
+    host = host.replace(/^\[|\]$/g, '')
+    if (host === 'localhost' || host === 'host.docker.internal' || host === '::1' || host === '0.0.0.0') return true
+    if (/^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\./.test(host)) return true
+    if (/^(fe80:|fc|fd)/i.test(host)) return true
+    if (!host.includes('.')) return true
+    return /\.(local|lan|internal|home|localdomain)$/.test(host)
   }
 
   private async http<T>(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ status: number; json: T | null; text: string }> {

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Minus, Paperclip, Send, Trash2, X, Clock } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, Select, cn } from '@renderer/components/ui'
+import { promptDialog } from '@renderer/components/dialogs'
 import { formatBytes } from '@renderer/lib/format'
 import { useCompose, type ComposerState } from '@renderer/store/compose'
 import { RecipientInput } from './RecipientInput'
@@ -200,12 +201,22 @@ function ComposeWindow({ c }: { c: ComposerState }) {
           size="sm"
           title="Schedule send"
           disabled={!canSend}
-          onClick={() => {
-            const when = window.prompt('Send at (e.g. 2026-11-03 09:00)', new Date(Date.now() + 3600_000).toISOString().slice(0, 16).replace('T', ' '))
+          onClick={async () => {
+            const inAnHour = new Date(Date.now() + 3600_000)
+            const pad = (n: number) => String(n).padStart(2, '0')
+            const when = await promptDialog({
+              title: 'Schedule send',
+              label: 'Send at',
+              defaultValue: `${inAnHour.getFullYear()}-${pad(inAnHour.getMonth() + 1)}-${pad(inAnHour.getDate())} ${pad(inAnHour.getHours())}:${pad(inAnHour.getMinutes())}`,
+              placeholder: 'YYYY-MM-DD HH:MM',
+              okLabel: 'Schedule',
+              validate: (s) => {
+                const d = new Date(s)
+                return Number.isNaN(d.getTime()) ? 'Enter a date like 2026-11-03 09:00' : d.getTime() < Date.now() ? 'Pick a time in the future' : null
+              }
+            })
             if (!when) return
-            const d = new Date(when)
-            if (Number.isNaN(d.getTime()) || d.getTime() < Date.now()) return setError('Enter a future date/time')
-            send.mutate(d.toISOString())
+            send.mutate(new Date(when).toISOString())
           }}
         >
           <Clock className="size-4" />
