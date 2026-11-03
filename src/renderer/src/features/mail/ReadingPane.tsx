@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Archive, Download, Forward, ImageIcon, MailOpen, MoreHorizontal, Paperclip, Reply, ReplyAll, Star, Trash2, AlertOctagon } from 'lucide-react'
-import { invoke } from '@renderer/lib/api'
+import { Archive, Forward, Mail, MailOpen, MoreHorizontal, Reply, ReplyAll, Star, Trash2, AlertOctagon } from 'lucide-react'
 import { Button, Spinner, cn } from '@renderer/components/ui'
 import { useUi } from '@renderer/store/ui'
-import { formatFullDate, formatBytes, initials, avatarColor } from '@renderer/lib/format'
-import { sanitizeEmailHtml, textToHtml, wrapForFrame } from '@renderer/lib/sanitize'
-import { useMessage, useMailActions } from './hooks'
+import { useMessage, useMailActions, useMessageList, useThread } from './hooks'
 import { SnoozeMenu } from './SnoozeMenu'
-import { MessageAiPanel } from '@renderer/features/ai/MessageAiPanel'
 import { useContextMenu } from '@renderer/components/ContextMenu'
 import { useMessageMenuDeps } from './MessageList'
 import { messageMenu } from './menus'
-import { useMessageList } from './hooks'
-import type { MessageDetail, Address } from '@shared/schemas/mail'
+import { MessageCard } from './MessageCard'
+import { ThreadView } from './ThreadView'
+import type { MessageDetail, MessageListItem } from '@shared/schemas/mail'
 
 export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'replyAll' | 'forward', m: MessageDetail) => void }) {
   const { selectedMessageId, selectedIds, selectMessage, mailbox } = useUi()
@@ -24,13 +19,6 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
   const listItem = list.data?.pages.flat().find((x) => x.id === selectedMessageId)
   const actions = useMailActions()
   const m = q.data
-
-  // Mark read shortly after opening.
-  useEffect(() => {
-    if (!m || m.flags.seen) return
-    const t = setTimeout(() => actions.setFlags.mutate({ ids: [m.id], flags: { seen: true } }), 800)
-    return () => clearTimeout(t)
-  }, [m?.id, m?.flags.seen]) // intentionally not depending on `actions`
 
   if (selectedIds.length > 1) {
     return (
@@ -59,6 +47,12 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
     )
   }
 
+  const thread = useThread(m.threadId)
+  const items = thread.data ?? []
+  const menuItem = listItem ?? items.find((x) => x.id === m.id)
+  const isConversation = items.length > 1
+  const selfItem: MessageListItem = menuItem ?? { id: m.id, accountId: m.accountId, folderId: m.folderId, uid: 0, threadId: m.threadId, subject: m.subject, from: m.from, to: m.to, date: m.date, snippet: '', flags: m.flags, hasAttachments: m.attachments.some((a) => !a.isInline), labels: m.labels, aiCategory: null, aiPriority: null, threadCount: 1, threadUnread: 0, snoozedUntil: null }
+
   return (
     <div className="flex h-full flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-border px-3 py-1.5">
@@ -81,144 +75,29 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
         <Button size="sm" variant="ghost" onClick={() => actions.junk.mutate({ ids: [m.id], junk: true }, { onSuccess: () => selectMessage(null) })} title="Mark as junk">
           <AlertOctagon className="size-4" />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })} title="Star (s)">
+        <Button size="sm" variant="ghost" onClick={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })} title={m.flags.flagged ? 'Remove star (s)' : 'Star (s)'}>
           <Star className={cn('size-4', m.flags.flagged && 'text-yellow-500')} fill={m.flags.flagged ? 'currentColor' : 'none'} />
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => actions.setFlags.mutate({ ids: [m.id], flags: { seen: !m.flags.seen } })} title="Mark unread (u)">
-          <MailOpen className="size-4" />
+        <Button size="sm" variant="ghost" onClick={() => actions.setFlags.mutate({ ids: [m.id], flags: { seen: !m.flags.seen } })} title={m.flags.seen ? 'Mark unread (u)' : 'Mark read (Shift+I)'}>
+          {m.flags.seen ? <Mail className="size-4" /> : <MailOpen className="size-4" />}
         </Button>
         <SnoozeMenu ids={[m.id]} />
-        <Button size="sm" variant="ghost" className="ml-auto" title="More actions" onClick={(e) => listItem && menu.openAt(e.currentTarget, messageMenu([listItem], deps))} onContextMenu={(e) => listItem && menu.open(e, messageMenu([listItem], deps))}>
+        {isConversation && <span className="ml-2 text-xs text-muted">Acting on the highlighted message</span>}
+        <Button size="sm" variant="ghost" className="ml-auto" title="More actions" onClick={(e) => menu.openAt(e.currentTarget, messageMenu([selfItem], deps))} onContextMenu={(e) => menu.open(e, messageMenu([selfItem], deps))}>
           <MoreHorizontal className="size-4" />
         </Button>
       </div>
 
-      <div className="border-b border-border px-5 py-3">
-        <h1 className="text-base font-semibold">{m.subject || '(no subject)'}</h1>
-        <div className="mt-2 flex items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white" style={{ background: avatarColor(m.from.address) }}>
-            {initials(m.from.name, m.from.address)}
+      {isConversation ? (
+        <ThreadView key={m.threadId} items={items} focusedId={m.id} subject={items[0]?.subject ?? m.subject} />
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b border-border px-5 py-3">
+            <h1 className="text-base font-semibold">{m.subject || '(no subject)'}</h1>
           </div>
-          <div className="min-w-0 flex-1 text-sm">
-            <div>
-              <span className="font-medium">{m.from.name || m.from.address}</span>
-              {m.from.name && <span className="ml-1 text-muted">&lt;{m.from.address}&gt;</span>}
-            </div>
-            <AddrLine label="To" list={m.to} />
-            <AddrLine label="Cc" list={m.cc} />
-          </div>
-          <div className="shrink-0 text-xs text-muted">{formatFullDate(m.date)}</div>
-        </div>
-      </div>
-
-      <div onContextMenu={(e) => listItem && menu.open(e, messageMenu([listItem], deps))}>
-        <MessageAiPanel m={m} />
-      </div>
-      <Body m={m} />
-
-      {m.attachments.filter((a) => !a.isInline).length > 0 && (
-        <div className="flex flex-wrap gap-2 border-t border-border px-4 py-2">
-          {m.attachments
-            .filter((a) => !a.isInline)
-            .map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center gap-2 rounded-md border border-border bg-panel px-2 py-1 text-xs"
-                onContextMenu={(e) =>
-                  menu.open(e, [
-                    { label: 'Open', onSelect: () => void invoke('attachments.open', { id: a.id }) },
-                    { label: 'Save as…', onSelect: () => void invoke('attachments.saveAs', { id: a.id }) },
-                    ...(/^image\//.test(a.mimeType) ? [{ label: 'Copy image', onSelect: () => void copyImage(a.id) }] : [])
-                  ])
-                }
-              >
-                <Paperclip className="size-3.5 text-muted" />
-                <button className="max-w-56 truncate hover:underline" title={a.filename} onClick={() => invoke('attachments.open', { id: a.id })}>
-                  {a.filename}
-                </button>
-                <span className="text-muted">{formatBytes(a.size)}</span>
-                <button className="rounded p-0.5 text-muted hover:bg-hover hover:text-fg" title="Save as…" onClick={() => invoke('attachments.saveAs', { id: a.id })}>
-                  <Download className="size-3.5" />
-                </button>
-              </div>
-            ))}
+          <MessageCard item={selfItem} expanded focused standalone />
         </div>
       )}
     </div>
   )
-}
-
-function AddrLine({ label, list }: { label: string; list: Address[] }) {
-  if (!list.length) return null
-  return (
-    <div className="truncate text-xs text-muted" title={list.map((a) => a.address).join(', ')}>
-      {label}: {list.map((a) => a.name || a.address).join(', ')}
-    </div>
-  )
-}
-
-function Body({ m }: { m: MessageDetail }) {
-  const [allowRemote, setAllowRemote] = useState(false)
-  const settings = useQuery({ queryKey: ['settings'], queryFn: () => invoke('settings.get') })
-  const inline = m.attachments.filter((a) => a.isInline && a.contentId)
-  const cidQuery = useQuery({
-    queryKey: ['cid', m.id, inline.map((a) => a.id)],
-    enabled: inline.length > 0 && m.bodyState === 'full',
-    queryFn: async () => {
-      const out: Record<string, string> = {}
-      await Promise.all(inline.map(async (a) => {
-        const url = await invoke('attachments.dataUrl', { id: a.id })
-        if (url) out[a.contentId!] = url
-      }))
-      return out
-    }
-  })
-
-  const dark = document.documentElement.classList.contains('dark')
-  const allow = allowRemote || settings.data?.privacy.loadRemoteImages === 'always'
-  const rendered = useMemo(() => {
-    if (m.bodyState !== 'full') return null
-    if (m.textHtml) return sanitizeEmailHtml(m.textHtml, { cid: cidQuery.data ?? {}, allowRemoteImages: !!allow })
-    return { html: textToHtml(m.textPlain ?? ''), blockedRemoteImages: 0 }
-  }, [m, cidQuery.data, allow])
-
-  useEffect(() => setAllowRemote(false), [m.id])
-
-  if (m.bodyState === 'unavailable') return <div className="flex flex-1 items-center justify-center text-sm text-muted">This account is offline; the message body hasn’t been downloaded yet.</div>
-  if (!rendered) {
-    return (
-      <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted">
-        <Spinner /> Downloading…
-      </div>
-    )
-  }
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {rendered.blockedRemoteImages > 0 && (
-        <div className="flex items-center gap-2 border-b border-border bg-panel px-4 py-1.5 text-xs text-muted">
-          <ImageIcon className="size-3.5" /> Remote images blocked for privacy.
-          <button className="text-accent hover:underline" onClick={() => setAllowRemote(true)}>
-            Load images
-          </button>
-        </div>
-      )}
-      <iframe
-        title="message"
-        className="min-h-0 flex-1 w-full bg-transparent"
-        sandbox="allow-popups allow-popups-to-escape-sandbox"
-        srcDoc={wrapForFrame(rendered.html, dark)}
-      />
-    </div>
-  )
-}
-
-async function copyImage(attachmentId: string) {
-  const url = await invoke('attachments.dataUrl', { id: attachmentId })
-  if (!url) return
-  const blob = await (await fetch(url)).blob()
-  try {
-    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-  } catch {
-    /* clipboard image unsupported */
-  }
 }

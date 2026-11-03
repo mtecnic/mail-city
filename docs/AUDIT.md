@@ -14,18 +14,28 @@ A line-by-line review of `src/`, `tests/`, the build config and the docs, done w
 | F4 | Low | `docs/AI.md` ended with a leftover development note ("Phase 9") | Removed |
 | F5 | Low | README overstated or omitted several things: "toasts with actions" (notifications are click-only), per-provider help links, search operators, rule actions, and the real list of providers | README rewritten from the audited inventory |
 
+## Fixed in the follow-up change
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| S1 | High | Per-account privacy overrides were bypassed by the assistant in the unified view | `Agent.send` resolves the chat route first, then restricts tool calls and the system prompt to `AiService.accountsAllowedFor(provider)`; a session opened on a local-only account never falls through to a cloud model. Tests in `tests/unit/aiPrivacy.test.ts` |
+| S2 | High | Embeddings and Ask-my-mail ignored per-account privacy | `Indexer.tick` only indexes accounts the embeddings route may see (status reports how many are excluded); `hybrid()` filters semantic hits the same way; `askMail` drops hits from accounts the chat route may not see before fetching bodies. Its FTS fallback was also broken (the query language has no `OR`); it now searches per term and fuses the lists |
+| S5 | Medium | MCP tools leaked past the account allowlist | `mail_move` checks the destination folder's account; `rules_create` defaults to the shared accounts, rejects out-of-scope ids and move targets; `mail_create_draft` / `mail_send` verify `inReplyToMessageId` is readable and belongs to `accountId`; `contacts_search` only returns people seen in shared mail (`MessageStore.addressesSeenIn`). Tests in `tests/unit/mcp.test.ts` |
+| S6 | Medium | Cloud-first defaults | `privacy.mode` defaults to `local-only`. Adding a Claude key asks explicitly what Claude may see and whether to auto-triage; auto-triage is off unless chosen |
+| M1 | Medium | No conversation view existed | `ThreadView` + `MessageCard`: threads render oldest-first with selected and unread messages expanded; `Enter` toggles the focused card; the toolbar acts on the highlighted message |
+| M2 | Medium | Server drafts were duplicated on every save | The `append` op carries `draftId`; the syncer emits `appended` with the APPENDUID, the kernel records it, and the next save deletes the previous copy. Discard and send remove the server copy. Test in `tests/unit/syncEngine.test.ts` |
+| M3 | Medium | Snooze wake local only | `SnoozeService` wakes through `MessageService.setFlags`, which queues the server flag change. Test in `tests/unit/kernel.test.ts` |
+| M4 | Medium | Stale star / unread icons in the reading pane | `useMailActions` now invalidates the message cache; tooltips reflect the current state |
+| U2 | Medium | Auto-approve label claimed to cover MCP | Label corrected; MCP uses per-client allowlists |
+
 ## Open findings
 
 ### Privacy and security
 
 | # | Severity | Finding | Where |
 |---|---|---|---|
-| S1 | High | **Per-account privacy overrides are bypassed in the unified view.** `Agent.send` only passes account IDs when a session has `context.accountId`; with none, `cloudAllowed([])` checks the global mode only, so the assistant can read mail from a local-only account and send it to Claude | `src/kernel/ai/agent/Agent.ts`, `src/kernel/ai/AiService.ts` |
-| S2 | High | **Embeddings and Ask-my-mail retrieval ignore per-account privacy.** `Indexer.tick`, `Indexer.semantic` and `askMail` call `routeFor('embeddings')` without account IDs | `src/kernel/ai/embeddings/Indexer.ts`, `src/kernel/ai/features/askMail.ts` |
 | S3 | Medium | **Regenerating the MCP token does not disconnect clients.** `McpHttpServer.start()` captures the token once; the old token keeps working and the new one is rejected until HTTP is toggled off and on. The UI says "Regenerate (disconnects clients)" | `src/main/mcpHttp.ts`, `src/renderer/src/features/settings/McpSettings.tsx` |
 | S4 | Medium | The MCP token is masked in one field but shown in plain text inside the config snippets, and `mcp.configSnippets` creates a token even when HTTP is off | `src/main/ipc/index.ts`, `McpSettings.tsx` |
-| S5 | Medium | **MCP account scoping leaks**: `rules_create` ignores `ctx.accountIds` (can create all-account rules and apply them), `contacts_search` returns contacts from all accounts, `mail_move` does not check the destination folder's account, `mail_create_draft` / `mail_send` do not check the account of `inReplyToMessageId` | `src/kernel/ai/tools/mailTools.ts` |
-| S6 | Medium | **Risky defaults**: `enabled`, `autoTriage` and `autoIndex` default to true and privacy defaults to `cloud-allowed`. Adding a Claude key fills every empty route except embeddings, so sender, subject and snippet of every new inbox message go to the API with no further prompt | `src/shared/schemas/ai.ts`, `AiSettings.tsx` (`AddClaude`) |
 | S7 | Low | Unsubscribe by `mailto:` sends immediately with no confirmation (the undo-send window still applies) | `src/kernel/ai/features/unsubscribe.ts`, `MessageAiPanel.tsx` |
 | S8 | Low | Quick-reply text is interpolated into HTML unescaped (`<p>${text}</p>`); the composer AI bar does escape | `MessageAiPanel.tsx` `useReply` |
 | S9 | Low | Assistant sessions persist tool results (mail content) in `ai_sessions`; docs only promise that the usage log has no bodies | `src/kernel/ai/agent/Agent.ts`, `docs/AI.md` |
@@ -38,10 +48,6 @@ A line-by-line review of `src/`, `tests/`, the build config and the docs, done w
 
 | # | Severity | Finding | Where |
 |---|---|---|---|
-| M1 | Medium | **No conversation view.** `useThread` exists but is unused; the reading pane shows one message. Thread counts and thread summaries work | `src/renderer/src/features/mail/hooks.ts:56`, `ReadingPane.tsx` |
-| M2 | Medium | **Server drafts duplicate.** `syncDraftToServer` never records the server UID (`setServerLocation(id, folder.id, null)`), so every close-and-keep appends a new copy; discard and send never remove server copies | `src/kernel/mail/ComposeService.ts` |
-| M3 | Medium | **Snooze wake is local only.** Waking sets unread locally without queueing a `setFlags` op; a later flag sync can undo it | `src/kernel/mail/Snooze.ts` |
-| M4 | Medium | **Reading-pane Star / Mark-unread buttons go stale.** They read from the `['message', id]` cache, which `useMailActions` does not invalidate, so the icon does not change and a second click resends the same value | `hooks.ts:62-66`, `ReadingPane.tsx` |
 | M5 | Medium | **Inline images are lost on reply / forward**: quoted HTML is sanitized with `cid: {}` and forward drops inline parts | `src/renderer/src/features/compose/Editor.tsx:18`, `src/kernel/mail/compose.ts` |
 | M6 | Low | Gmail **labels are read-only**: `setLabels` op and `addLabels` / `removeLabels` exist but nothing queues them and there is no IPC channel | `src/kernel/sync/OpQueue.ts`, `MessageStore.ts` |
 | M7 | Low | QRESYNC is enabled on the connection but `open()` never passes `changedSince` / `uidValidity`, so deletions are found by a full `UID SEARCH ALL` per folder per pass | `src/kernel/providers/ImapProvider.ts` |
@@ -58,7 +64,6 @@ A line-by-line review of `src/`, `tests/`, the build config and the docs, done w
 | # | Severity | Finding | Where |
 |---|---|---|---|
 | U1 | Medium | **Settings with no effect**: `density`; per-account `syncSettings.initialWindowDays` (editable, but `SyncEngine` passes only the global value); `privacy.loadRemoteImages = 'contacts'` (in the schema, not in the UI, not handled); `indexWindowDays` has no UI; `launchAtLogin` is a no-op on Linux | `GeneralSettings.tsx`, `EditAccountDialog.tsx`, `SyncEngine.ts`, `ReadingPane.tsx:178`, `protocol.ts` |
-| U2 | Medium | `autoApproveTools` says it applies to "the assistant and MCP clients", but only the assistant uses it; MCP uses per-client allowlists | `AiSettings.tsx`, `src/shared/schemas/ai.ts` |
 | U3 | Medium | **Global shortcuts fire while modals are open** (confirm dialogs, shortcut help, context menus): `e`, `#`, `Delete` act on the selection underneath | `MailView.tsx:54` |
 | U4 | Low | `Enter` is listed in the shortcut help but has no handler; `s` always stars and never un-stars; `Shift+K` does not extend the selection; `Shift+J` builds duplicate IDs; `j` / `k` need the list focused | `MailView.tsx`, `MessageList.tsx:94`, `Welcome.tsx` |
 | U5 | Low | "Check for updates" gives no feedback (only *downloading* and *downloaded* states render) and does nothing in unpackaged builds | `AppEvents.tsx` 302-320, `updater.ts` |
@@ -94,10 +99,7 @@ A line-by-line review of `src/`, `tests/`, the build config and the docs, done w
 
 ## Suggested order of work
 
-1. **S1, S2, S5**: pass account IDs through the agent, indexer and MCP tool contexts, and make every tool check `ctx.accountIds`. Add tests for `cloudAllowed` and `isLocal`.
-2. **S6**: default privacy to *Local only* or ask on first Claude key; confirm before enabling auto-triage with a cloud route.
-3. **M2, M3, M4**: record the server UID for drafts and delete the old copy; queue a `setFlags` op on snooze wake; invalidate `['message', id]` in `useMailActions`.
-4. **S3, S4**: re-read the token per request; stop returning it in snippets unless revealed.
-5. **M1**: a conversation view in the reading pane using the existing `useThread` and `messages.thread`.
-6. **U1, U2, U3**: either wire the dead settings or remove them; fix the auto-approve label; suspend shortcuts while any dialog or menu is open.
-7. Everything marked Low as time allows.
+1. **S3, S4**: re-read the MCP token per request; stop returning it in snippets unless revealed.
+2. **U1, U3**: either wire the dead settings or remove them; suspend shortcuts while any dialog or menu is open.
+3. **M5, M6**: keep inline images on reply/forward; label editing.
+4. Everything marked Low as time allows.

@@ -22,6 +22,9 @@ interface UiState {
   selectMessage(id: string | null, opts?: { toggle?: boolean; range?: string[] }): void
   clearSelection(): void
   setSettingsOpen(open: boolean): void
+  /** Bumped by the Enter shortcut; the conversation view toggles the focused message. */
+  cardToggle: number
+  toggleCard(): void
 }
 
 export const useUi = create<UiState>((set) => ({
@@ -47,5 +50,7 @@ export const useUi = create<UiState>((set) => ({
       return { selectedMessageId: id, selectedIds: [id] }
     }),
   clearSelection: () => set({ selectedMessageId: null, selectedIds: [] }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen })
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  cardToggle: 0,
+  toggleCard: () => set((s) => ({ cardToggle: s.cardToggle + 1 }))
 }))

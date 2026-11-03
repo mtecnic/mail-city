@@ -25,7 +25,9 @@ export class AiService extends TypedEmitter<{ changed: [AiSettings]; pullProgres
   constructor(
     private readonly db: DB,
     private readonly settings: SettingsStore,
-    private readonly vault: SecretVault
+    private readonly vault: SecretVault,
+    /** Ids of every enabled account; used to resolve "all accounts" under the privacy policy. */
+    private readonly listAccountIds: () => string[] = () => []
   ) {
     super()
   }
@@ -97,11 +99,30 @@ export class AiService extends TypedEmitter<{ changed: [AiSettings]; pullProgres
     }
   }
 
-  /** Is cloud AI allowed for these accounts under the privacy policy? */
+  /**
+   * Is cloud AI allowed for these accounts under the privacy policy?
+   * `accountIds` are the accounts whose content the call may touch; an empty
+   * list means "no mail content" (pure chat) and only the global mode applies.
+   */
   cloudAllowed(accountIds: string[] = []): boolean {
     const s = this.get()
     if (s.privacy.mode === 'local-only') return false
     return accountIds.every((a) => (s.privacy.perAccount[a] ?? 'cloud-allowed') === 'cloud-allowed')
+  }
+
+  /**
+   * Accounts whose content may be handled by `provider`: every enabled account
+   * for a local provider, only the cloud-allowed ones for a cloud provider.
+   * `within` narrows the candidate set (undefined = all enabled accounts).
+   */
+  enabledAccountIds(): string[] {
+    return this.listAccountIds()
+  }
+
+  accountsAllowedFor(provider: LLMProvider, within?: string[]): string[] {
+    const all = within ?? this.listAccountIds()
+    if (provider.isLocal) return all
+    return all.filter((id) => this.cloudAllowed([id]))
   }
 
   /**

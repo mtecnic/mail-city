@@ -76,8 +76,9 @@ export class ComposeService {
       const old = this.store.getFolder(row.serverFolderId)
       if (old) this.sync.enqueue(row.accountId, { kind: 'delete', folderPath: old.path, uids: [row.serverUid] })
     }
-    this.sync.enqueue(row.accountId, { kind: 'append', folderPath: folder.path, mimePath, flags: ['\\Draft', '\\Seen'] })
-    // The real UID is learned when the Drafts folder syncs; we don't block on it.
+    this.sync.enqueue(row.accountId, { kind: 'append', folderPath: folder.path, mimePath, flags: ['\\Draft', '\\Seen'], draftId: row.id })
+    // The old copy (if any) is queued for deletion above; the new UID arrives via the
+    // sync engine's `appended` event once the server answers with APPENDUID.
     this.drafts.setServerLocation(row.id, folder.id, null)
   }
 

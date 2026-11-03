@@ -8,7 +8,7 @@ export type PendingOp =
   | { kind: 'move'; folderPath: string; uids: number[]; toPath: string; messageIds: string[] }
   | { kind: 'delete'; folderPath: string; uids: number[] }
   | { kind: 'setLabels'; folderPath: string; uids: number[]; add: string[]; remove: string[] }
-  | { kind: 'append'; folderPath: string; mimePath: string; flags: string[]; messageId?: string }
+  | { kind: 'append'; folderPath: string; mimePath: string; flags: string[]; messageId?: string; /** Local draft whose server copy this is; its UID is recorded on success. */ draftId?: string }
   | { kind: 'createFolder'; path: string }
   | { kind: 'renameFolder'; path: string; newPath: string }
   | { kind: 'deleteFolder'; path: string }

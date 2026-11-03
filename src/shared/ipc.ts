@@ -265,7 +265,7 @@ export const channels = {
   'ai.unsubscribe.run': defineChannel(z.object({ messageId: z.string(), url: z.string() }), z.object({ ok: z.boolean(), method: z.string() })),
   'ai.askMail': defineChannel(z.object({ question: z.string(), accountId: z.string().optional(), streamId: z.string().optional() }), z.object({ answer: z.string(), sources: z.array(z.object({ n: z.number(), id: z.string(), subject: z.string(), from: z.string(), date: z.string() })) })),
   'ai.triage.backlog': defineChannel(z.void(), z.object({ triaged: z.number() })),
-  'ai.index.status': defineChannel(z.void(), z.object({ available: z.boolean(), model: z.string().nullable(), dimension: z.number().nullable(), indexed: z.number(), pending: z.number(), running: z.boolean(), lastError: z.string().nullable() })),
+  'ai.index.status': defineChannel(z.void(), z.object({ available: z.boolean(), model: z.string().nullable(), dimension: z.number().nullable(), indexed: z.number(), pending: z.number(), running: z.boolean(), lastError: z.string().nullable(), excludedAccounts: z.number() })),
   'ai.index.run': defineChannel(z.void(), z.object({ indexed: z.number() })),
   'ai.semanticSearch': defineChannel(z.object({ query: z.string(), limit: z.number().int().optional() }), z.array(MessageListItemSchema)),
 

@@ -25,6 +25,8 @@ export type SyncerEvents = {
   /** Every newly cached header, including during the initial import (contact harvesting, indexing). */
   headersStored: [folderId: string, messageIds: string[]]
   bodyFetched: [messageId: string]
+  /** An `append` op succeeded; `uid` is known when the server supports UIDPLUS. */
+  appended: [folderId: string, uid: number | undefined, op: Extract<PendingOp, { kind: 'append' }>]
 }
 
 export interface SyncerDeps {
@@ -510,7 +512,9 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
         const dest = this.deps.store.folderByPath(this.account.id, op.folderPath)
         if (dest) {
           if (op.messageId && uid) this.deps.store.moveLocal(op.messageId, dest.id, uid)
+          if (op.draftId && !uid) this.log.warn('server did not return APPENDUID; draft copies cannot be de-duplicated', { folder: op.folderPath })
           this.folderSyncRequests.add(dest.id)
+          this.emit('appended', dest.id, uid, op)
         }
         return
       }

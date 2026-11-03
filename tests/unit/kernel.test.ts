@@ -62,4 +62,16 @@ describe('Kernel', () => {
     k.accounts.reorder([b.id, a.id])
     expect(k.accounts.list().map((x) => x.email)).toEqual(['b@test', 'a@test'])
   })
+
+  it('snooze wake marks the message unread on the server, not just locally', () => {
+    k = makeKernel()
+    const a = k.accounts.create({ type: 'imap', email: 'a@test', displayName: 'A', imap: { host: 'x', port: 993, tls: 'tls' }, smtp: { host: 'x', port: 587, tls: 'starttls' }, auth: { type: 'password', password: 'p' } })
+    const inbox = k.store.upsertFolder({ id: 'f1', accountId: a.id, path: 'INBOX', name: 'Inbox', delimiter: '/', specialUse: 'inbox', subscribed: true, sortOrder: 0 })
+    const { id } = k.store.upsertHeader(a.id, inbox.id, { uid: 7, modseq: undefined, flags: new Set(['\\Seen']), labels: undefined, threadId: undefined, size: 1, internalDate: new Date(), bodyStructure: undefined, headers: {}, envelope: { subject: 'Later', messageId: '<l@t>', from: [{ address: 'x@y' }], to: [{ address: 'a@test' }], date: new Date() } })
+    k.snooze.snooze([id], new Date(Date.now() - 1000))
+    expect(k.snooze.wake()).toEqual([id])
+    expect(k.store.getMessage(id)!.flags.seen).toBe(false)
+    const op = k.sync.ops.next(a.id)!
+    expect(op.payload).toMatchObject({ kind: 'setFlags', folderPath: 'INBOX', uids: [7], remove: ['\\Seen'] })
+  })
 })

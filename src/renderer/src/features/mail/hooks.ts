@@ -47,14 +47,22 @@ export function useMessageList(sel: MailboxSelection) {
   })
 }
 
-export function useMessage(id: string | null) {
+export function useMessage(id: string | null, enabled = true) {
   const qc = useQueryClient()
   useEffect(() => onEvent('messages.bodyFetched', (e) => qc.invalidateQueries({ queryKey: ['message', e.id] })), [qc])
-  return useQuery({ queryKey: ['message', id], queryFn: () => invoke('messages.get', { id: id! }), enabled: !!id, staleTime: 60_000 })
+  return useQuery({ queryKey: ['message', id], queryFn: () => invoke('messages.get', { id: id! }), enabled: !!id && enabled, staleTime: 60_000 })
 }
 
+/** Every message of a conversation, oldest first. */
 export function useThread(threadId: string | null | undefined) {
-  return useQuery({ queryKey: ['thread', threadId], queryFn: () => invoke('messages.thread', { threadId: threadId! }), enabled: !!threadId })
+  const qc = useQueryClient()
+  useEffect(() => onEvent('messages.changed', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
+  useEffect(() => onEvent('messages.bodyFetched', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
+  return useQuery({
+    queryKey: ['thread', threadId],
+    queryFn: async () => (await invoke('messages.thread', { threadId: threadId! })).slice().sort((a, b) => a.date.localeCompare(b.date)),
+    enabled: !!threadId
+  })
 }
 
 export function useMailActions() {
@@ -63,6 +71,7 @@ export function useMailActions() {
     void qc.invalidateQueries({ queryKey: ['messages'] })
     void qc.invalidateQueries({ queryKey: ['folders'] })
     void qc.invalidateQueries({ queryKey: ['thread'] })
+    void qc.invalidateQueries({ queryKey: ['message'] })
   }
   const setFlags = useMutation({ mutationFn: (v: { ids: string[]; flags: Partial<MessageFlags> }) => invoke('messages.setFlags', v), onSettled: refresh })
   const archive = useMutation({ mutationFn: (ids: string[]) => invoke('messages.archive', { ids }), onSettled: refresh })

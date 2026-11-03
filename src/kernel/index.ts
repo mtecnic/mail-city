@@ -120,12 +120,12 @@ export class Kernel {
     this.folders = new FolderService(this.db, this.store, this.sync)
     this.contacts = new ContactStore(this.db)
     this.rules = new RulesEngine(this.db, this.store, this.mail)
-    this.snooze = new SnoozeService(this.db, this.store)
+    this.snooze = new SnoozeService(this.db, this.store, (ids) => this.mail.setFlags(ids, { seen: false }))
     this.vault = new SecretVault(this.settings, options.cipher)
-    this.ai = new AiService(this.db, this.settings, this.vault)
+    this.ai = new AiService(this.db, this.settings, this.vault, () => this.accounts.list().filter((a) => a.enabled).map((a) => a.id))
     this.tools = buildMailTools(this)
     this.indexer = new EmbeddingIndexer(this.dbHandle.raw, this.db, this.dbHandle.hasVec, this.ai, this.store, this.search, () => this.ai.get().indexWindowDays, () => this.ai.get().enabled && this.ai.get().autoIndex)
-    this.agent = new Agent(this.db, this.ai, this.tools, (ctx) => this.agentContext(ctx))
+    this.agent = new Agent(this.db, this.ai, this.tools, (ctx, accountIds) => this.agentContext(ctx, accountIds))
     this.triage = new TriageRunner(this)
     this.wireEvents()
     this.log.info('kernel ready', { dataDir: options.dataDir, vec: this.dbHandle.hasVec })
@@ -139,12 +139,14 @@ export class Kernel {
   }
 
   /** Volatile context for the assistant: accounts, folders and the message/thread in view. */
-  private agentContext(ctx: { accountId?: string; messageId?: string; threadId?: string }): string {
+  private agentContext(ctx: { accountId?: string; messageId?: string; threadId?: string }, accountIds?: string[]): string {
     const accounts = this.accounts
       .list()
+      .filter((a) => !accountIds || accountIds.includes(a.id))
       .map((a) => `- ${a.displayName} <${a.email}> (id ${a.id}${a.type ? `, ${a.type}` : ''})`)
       .join('\n')
-    const lines = [`Today is ${new Date().toDateString()}.`, `Accounts:\n${accounts}`]
+    const lines = [`Today is ${new Date().toDateString()}.`, `Accounts you may access:\n${accounts || '(none)'}`]
+    if (accountIds && accountIds.length < this.accounts.list().filter((a) => a.enabled).length) lines.push('Some accounts are hidden by the privacy policy (local-only) and cannot be read in this conversation.')
     if (ctx.accountId) lines.push(`The user is currently looking at account ${ctx.accountId}.`)
     if (ctx.messageId) {
       const m = this.store.getMessage(ctx.messageId)
@@ -165,6 +167,10 @@ export class Kernel {
         if (outgoing) this.contacts.harvest([...m.toList, ...m.ccList, ...m.bccList], 'sent', when)
         else this.contacts.harvest([{ name: m.fromName, address: m.fromAddr }], 'received', when)
       }
+    })
+    // A draft's server copy now has a UID: remember it so the next save replaces it.
+    this.sync.on('appended', (_accountId, folderId, uid, op) => {
+      if (op.draftId && uid && this.drafts.getRow(op.draftId)) this.drafts.setServerLocation(op.draftId, folderId, uid)
     })
     // Rules on genuinely new mail.
     this.sync.on('newMessages', (_accountId, folderId, ids) => {

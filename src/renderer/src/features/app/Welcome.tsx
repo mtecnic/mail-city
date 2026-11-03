@@ -44,7 +44,7 @@ export const SHORTCUTS: [string, string][] = [
   ['c', 'Compose'],
   ['/', 'Search'],
   ['j / k', 'Next / previous message'],
-  ['Enter', 'Open'],
+  ['Enter', 'Expand / collapse the open message in a conversation'],
   ['e', 'Archive'],
   ['#', 'Delete'],
   ['s', 'Star'],

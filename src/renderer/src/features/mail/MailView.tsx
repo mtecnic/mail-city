@@ -26,7 +26,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const [help, setHelp] = useState(false)
   const [assistant, setAssistant] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
-  const { mailbox, selectedMessageId, selectedIds, selectMessage, editAccount, closeEditAccount, sourceMessageId, setSourceMessageId } = useUi()
+  const { mailbox, selectedMessageId, selectedIds, selectMessage, editAccount, closeEditAccount, sourceMessageId, setSourceMessageId, toggleCard } = useUi()
   const actions = useMailActions()
   const deps = useMessageMenuDeps()
   const menu = useContextMenu()
@@ -106,6 +106,9 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
         case 'f':
           if (selectedMessageId) void compose.reply(selectedMessageId, 'forward')
           break
+        case 'Enter':
+          toggleCard()
+          break
         case 'Escape':
           selectMessage(null)
           break
@@ -116,7 +119,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [selectedIds, selectedMessageId, actions, selectMessage, compose, deps, list.data, menu])
+  }, [selectedIds, selectedMessageId, actions, selectMessage, compose, deps, list.data, menu, toggleCard])
 
   return (
     <div className="flex h-screen w-screen flex-col">

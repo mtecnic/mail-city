@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { Kernel } from '@kernel/index'
 import { plainCipher } from '@kernel/accounts/SecretStore'
 import { AccountSyncer } from '@kernel/sync/AccountSyncer'
-import { FakeImapProvider } from './fakeImap'
+import { FakeImapProvider, FakeMailbox } from './fakeImap'
 
 function setup() {
   const k = new Kernel({ dataDir: '/tmp', dbPath: ':memory:', cipher: plainCipher, autoSync: false })
@@ -154,5 +154,30 @@ describe('AccountSyncer with a fake IMAP server', () => {
     const p = s.syncer.fetchSource(hello.id)
     await s.syncer.tick()
     expect((await p)?.toString()).toMatch(/^From: b@x/m)
+  })
+
+  it('records the server UID of an appended draft so the next save replaces the old copy', async () => {
+    const s = setup()
+    k = s.k
+    s.fake.mailboxes.set('Drafts', new FakeMailbox('Drafts', '\\Drafts'))
+    // Forward the standalone syncer's events the way SyncEngine does for managed syncers.
+    s.syncer.on('appended', (folderId, uid, op) => k.sync.emit('appended', s.acct.id, folderId, uid, op))
+    await s.syncer.tick()
+    const draft = k.drafts.save({ accountId: s.acct.id, identityId: k.identities.defaultFor(s.acct.id)!.id, to: [{ name: '', address: 'x@y' }], cc: [], bcc: [], subject: 'WIP', html: '<p>hi</p>', text: 'hi', inReplyToMessageId: null, replyMode: null })
+    await k.compose.syncDraftToServer(draft.id)
+    await s.syncer.tick()
+    const first = k.drafts.getRow(draft.id)!
+    expect(first.serverUid).toBe(1)
+    expect(s.fake.box('Drafts').messages.size).toBe(1)
+    // Save again: the previous server copy is deleted, the new one appended and tracked.
+    await k.compose.syncDraftToServer(draft.id)
+    await s.syncer.tick()
+    expect(s.fake.ops.filter((o) => o.startsWith('delete') || o.startsWith('append'))).toEqual(['append Drafts', 'delete 1', 'append Drafts'])
+    expect(s.fake.box('Drafts').messages.size).toBe(1)
+    expect(k.drafts.getRow(draft.id)!.serverUid).toBe(2)
+    // Discarding removes the server copy too.
+    k.compose.discardDraft(draft.id)
+    await s.syncer.tick()
+    expect(s.fake.box('Drafts').messages.size).toBe(0)
   })
 })

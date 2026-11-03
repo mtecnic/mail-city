@@ -4,13 +4,15 @@ import { messages } from '../db/schema'
 import type { MessageStore } from './MessageStore'
 import { TypedEmitter } from '../utils/emitter'
 
-/** Local snooze: hides messages from lists until `snoozedUntil`, then resurfaces them unread. */
+/** Snooze: hides messages from lists until `snoozedUntil`, then resurfaces them unread (locally and on the server). */
 export class SnoozeService extends TypedEmitter<{ woke: [messageIds: string[]] }> {
   private timer: NodeJS.Timeout | null = null
 
   constructor(
     private readonly db: DB,
-    private readonly store: MessageStore
+    private readonly store: MessageStore,
+    /** Marks woken messages unread locally *and* on the server (MessageService.setFlags). */
+    private readonly markUnread: (ids: string[]) => void = (ids) => store.setLocalFlags(ids, { seen: false })
   ) {
     super()
   }
@@ -44,7 +46,7 @@ export class SnoozeService extends TypedEmitter<{ woke: [messageIds: string[]] }
       .map((r) => r.id)
     if (!due.length) return []
     this.store.setSnoozed(due, null)
-    this.store.setLocalFlags(due, { seen: false })
+    this.markUnread(due)
     this.emit('woke', due)
     return due
   }

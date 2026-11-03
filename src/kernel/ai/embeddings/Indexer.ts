@@ -4,7 +4,7 @@
  * (BM25 via FTS5 ∪ kNN, fused with reciprocal rank).
  */
 import type Database from 'better-sqlite3'
-import { and, eq, gt, ne } from 'drizzle-orm'
+import { and, eq, gt, inArray, ne } from 'drizzle-orm'
 import type { DB } from '../../db'
 import { messages } from '../../db/schema'
 import type { AiService } from '../AiService'
@@ -27,6 +27,8 @@ export interface IndexStatus {
   pending: number
   running: boolean
   lastError: string | null
+  /** Accounts the embeddings route may not see under the privacy policy (never indexed). */
+  excludedAccounts: number
 }
 
 export function chunkText(text: string, size = CHUNK_CHARS, overlap = CHUNK_OVERLAP): string[] {
@@ -103,7 +105,20 @@ export class EmbeddingIndexer extends TypedEmitter<{ progress: [IndexStatus] }> 
   status(): IndexStatus {
     const indexed = this.raw.prepare(`SELECT count(*) n FROM messages WHERE index_state = 'vec'`).get() as { n: number }
     const pending = this.pendingCount()
-    return { available: this.hasVec, model: this.model, dimension: this.dim, indexed: indexed.n, pending, running: this.running, lastError: this.lastError }
+    return { available: this.hasVec, model: this.model, dimension: this.dim, indexed: indexed.n, pending, running: this.running, lastError: this.lastError, excludedAccounts: this.excludedAccounts() }
+  }
+
+  /** Accounts whose content the embeddings route may handle (privacy policy). */
+  private allowedAccounts(): string[] | null {
+    const route = this.ai.routeFor('embeddings')
+    if (!route?.provider.embed) return null
+    return this.ai.accountsAllowedFor(route.provider)
+  }
+
+  private excludedAccounts(): number {
+    const route = this.ai.routeFor('embeddings')
+    if (!route) return 0
+    return this.ai.enabledAccountIds().length - this.ai.accountsAllowedFor(route.provider).length
   }
 
   private pendingCount(): number {
@@ -143,6 +158,8 @@ export class EmbeddingIndexer extends TypedEmitter<{ progress: [IndexStatus] }> 
     if (!this.hasVec || this.running || !this.enabled()) return 0
     const route = this.ai.routeFor('embeddings')
     if (!route?.provider.embed) return 0
+    const allowed = this.ai.accountsAllowedFor(route.provider)
+    if (!allowed.length) return 0
     this.running = true
     let done = 0
     try {
@@ -150,7 +167,7 @@ export class EmbeddingIndexer extends TypedEmitter<{ progress: [IndexStatus] }> 
       const rows = this.db
         .select({ id: messages.id, subject: messages.subject, fromName: messages.fromName, fromAddr: messages.fromAddr })
         .from(messages)
-        .where(and(ne(messages.indexState, 'vec'), eq(messages.bodyState, 'full'), gt(messages.date, since)))
+        .where(and(ne(messages.indexState, 'vec'), eq(messages.bodyState, 'full'), gt(messages.date, since), inArray(messages.accountId, allowed)))
         .limit(limit)
         .all()
       if (!rows.length) return 0
@@ -201,12 +218,20 @@ export class EmbeddingIndexer extends TypedEmitter<{ progress: [IndexStatus] }> 
     return rows.slice(0, limit).map((r) => r.message_id)
   }
 
-  /** Hybrid: FTS (BM25) ∪ semantic, fused with reciprocal rank. */
+  /**
+   * Hybrid: FTS (BM25) ∪ semantic, fused with reciprocal rank. Semantic hits are
+   * limited to accounts the embeddings route may see, so vectors left over from an
+   * earlier policy never surface local-only mail through a cloud path.
+   */
   async hybrid(query: string, limit = 20): Promise<MessageListItem[]> {
     const fts = this.search.search(query, { limit }).map((m) => m.id)
     let sem: string[] = []
     try {
-      sem = await this.semantic(query, limit)
+      const allowed = this.allowedAccounts()
+      if (allowed) {
+        const allowedSet = new Set(allowed)
+        sem = this.store.listByIds(await this.semantic(query, limit)).filter((m) => allowedSet.has(m.accountId)).map((m) => m.id)
+      }
     } catch (e) {
       log.debug('semantic search unavailable', { error: String(e) })
     }
