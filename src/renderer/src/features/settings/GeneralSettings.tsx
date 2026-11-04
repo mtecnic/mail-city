@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke } from '@renderer/lib/api'
 import { Field, Select, Input, Button } from '@renderer/components/ui'
 import type { AppSettings } from '@shared/schemas/settings'
+import { ExportBackupDialog, RestoreBackupDialog } from './BackupDialogs'
 
 export function GeneralSettings() {
   const qc = useQueryClient()
@@ -10,6 +12,8 @@ export function GeneralSettings() {
     mutationFn: (patch: Record<string, unknown>) => invoke('settings.set', patch),
     onSuccess: (next) => qc.setQueryData(['settings'], next)
   })
+  const [exporting, setExporting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   if (!s.data) return null
   const v = s.data
 
@@ -63,6 +67,19 @@ export function GeneralSettings() {
           </Select>
         </Field>
       </div>
+
+      <h3 className="pt-4 text-sm font-semibold">Backup & restore</h3>
+      <p className="max-w-md text-xs text-muted">Move your whole setup to another computer: accounts with their passwords and tokens, identities, rules, contacts, settings and AI keys, in one passphrase-encrypted file. Mail is not included and syncs again after a restore.</p>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={() => setExporting(true)}>
+          Export a backup…
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setRestoring(true)}>
+          Restore from a backup…
+        </Button>
+      </div>
+      <ExportBackupDialog open={exporting} onClose={() => setExporting(false)} />
+      <RestoreBackupDialog open={restoring} onClose={() => setRestoring(false)} />
 
       <h3 className="pt-4 text-sm font-semibold">Updates & diagnostics</h3>
       <div className="flex gap-2">

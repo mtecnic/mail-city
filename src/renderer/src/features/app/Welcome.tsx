@@ -1,7 +1,7 @@
-import { Mail, Plus, Sparkles, Shield, Zap } from 'lucide-react'
+import { Mail, Plus, Sparkles, Shield, Zap, Upload } from 'lucide-react'
 import { Button } from '@renderer/components/ui'
 
-export function Welcome({ onAddAccount }: { onAddAccount: () => void }) {
+export function Welcome({ onAddAccount, onRestore }: { onAddAccount: () => void; onRestore?: () => void }) {
   return (
     <div className="flex flex-1 items-center justify-center p-8">
       <div className="max-w-lg space-y-6 text-center">
@@ -29,9 +29,16 @@ export function Welcome({ onAddAccount }: { onAddAccount: () => void }) {
             <div className="text-muted">Bring Claude or a local model; connect any MCP agent.</div>
           </div>
         </div>
-        <Button variant="primary" onClick={onAddAccount} className="mx-auto">
-          <Plus className="size-4" /> Add your first account
-        </Button>
+        <div className="flex justify-center gap-2">
+          <Button variant="primary" onClick={onAddAccount}>
+            <Plus className="size-4" /> Add your first account
+          </Button>
+          {onRestore && (
+            <Button variant="secondary" onClick={onRestore} title="Bring accounts, passwords, rules and settings over from a backup made on another computer">
+              <Upload className="size-4" /> Restore from a backup
+            </Button>
+          )}
+        </div>
         <p className="text-xs text-muted">
           Tip: press <kbd className="rounded border border-border px-1">?</kbd> any time for keyboard shortcuts.
         </p>

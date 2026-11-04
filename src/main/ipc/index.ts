@@ -13,6 +13,8 @@ import { getMcpSettings, setMcpSettings } from '@kernel/ai/mcp/McpBridge'
 import type { McpSettingsPatch } from '@shared/schemas/mcp'
 import { handle, emit } from './router'
 import { SavedSearchesSchema } from '@shared/ipc'
+import { exportBackup, importBackup } from '@kernel/backup/Backup'
+import { encryptBackup, decryptBackup, readBackupHeader } from '@kernel/backup/crypto'
 
 const DANGEROUS_EXT = /\.(exe|msi|bat|cmd|com|scr|ps1|vbs|js|jse|wsf|wsh|hta|cpl|jar|lnk|reg|pif)$/i
 
@@ -208,6 +210,28 @@ export function registerIpc(kernel: Kernel): void {
   handle('update.install', () => installUpdateNow())
   handle('app.openLogs', async () => {
     await shell.openPath(app.getPath('logs'))
+  })
+
+  // ---- Backup & restore -------------------------------------------------------
+  handle('backup.export', async ({ passphrase }) => {
+    const stamp = new Date().toISOString().slice(0, 10)
+    const r = await dialog.showSaveDialog({ defaultPath: `Mail City backup ${stamp}.mailcity`, filters: [{ name: 'Mail City backup', extensions: ['mailcity'] }] })
+    if (r.canceled || !r.filePath) return { ok: false }
+    const { header, payload } = exportBackup(kernel, { appVersion: app.getVersion(), platform: process.platform })
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(r.filePath, encryptBackup(header, payload, passphrase), { encoding: 'utf8', mode: 0o600 })
+    return { ok: true, path: r.filePath, header }
+  })
+  handle('backup.inspect', async () => {
+    const r = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Mail City backup', extensions: ['mailcity', 'json'] }] })
+    if (r.canceled || !r.filePaths[0]) return null
+    const text = await readFile(r.filePaths[0], 'utf8')
+    return { path: r.filePaths[0], header: readBackupHeader(text).header }
+  })
+  handle('backup.import', async ({ path, passphrase }) => {
+    const text = await readFile(path, 'utf8')
+    const { payload } = decryptBackup(text, passphrase)
+    return importBackup(kernel, payload)
   })
 
   // ---- AI ------------------------------------------------------------------

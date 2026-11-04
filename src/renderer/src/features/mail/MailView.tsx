@@ -14,6 +14,7 @@ import { Welcome, ShortcutHelp } from '@renderer/features/app/Welcome'
 import { AssistantPanel } from '@renderer/features/ai/AssistantPanel'
 import { AskMailCard } from '@renderer/features/ai/AskMail'
 import { EditAccountDialog } from '@renderer/features/accounts/EditAccountDialog'
+import { RestoreBackupDialog } from '@renderer/features/settings/BackupDialogs'
 import { SourceDialog } from './SourceDialog'
 import { useMessageMenuDeps } from './MessageList'
 import { messageMenu } from './menus'
@@ -23,6 +24,7 @@ import { invoke } from '@renderer/lib/api'
 
 export function MailView({ onSettings }: { onSettings: () => void }) {
   const [adding, setAdding] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   const [help, setHelp] = useState(false)
   const [assistant, setAssistant] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
@@ -132,7 +134,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       <div className="flex min-h-0 flex-1">
       <Sidebar onAddAccount={() => setAdding(true)} onSettings={onSettings} onAssistant={() => setAssistant((a) => !a)} />
       {accounts.data?.length === 0 ? (
-        <Welcome onAddAccount={() => setAdding(true)} />
+        <Welcome onAddAccount={() => setAdding(true)} onRestore={() => setRestoring(true)} />
       ) : mailbox.kind === 'outbox' ? (
         <section className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-10 items-center border-b border-border px-3 text-sm font-semibold">{title}</header>
@@ -154,6 +156,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       {assistant && <AssistantPanel onClose={() => setAssistant(false)} />}
       </div>
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
+      <RestoreBackupDialog open={restoring} onClose={() => setRestoring(false)} />
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />
       <EditAccountDialog accountId={editAccount?.id ?? null} initialTab={editAccount?.tab} onClose={closeEditAccount} />
       <SourceDialog messageId={sourceMessageId} onClose={() => setSourceMessageId(null)} />
