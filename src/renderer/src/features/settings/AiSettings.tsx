@@ -65,7 +65,7 @@ export function AiSettings() {
                 <span className="size-2 rounded-full" style={{ background: a.color }} />
                 <span className="w-56 truncate">{a.displayName}</span>
                 <Select className="h-7 w-48" value={v.privacy.perAccount[a.id] ?? 'cloud-allowed'} onChange={(e) => save.mutate({ privacy: { perAccount: { ...v.privacy.perAccount, [a.id]: e.target.value } } })}>
-                  <option value="cloud-allowed">Follow default</option>
+                  <option value="cloud-allowed">Same as default</option>
                   <option value="local-only">Local only</option>
                 </Select>
               </div>
@@ -300,6 +300,8 @@ function CapBadges({ m }: { m: AiModelInfo }) {
 function AddClaude({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const [key, setKey] = useState('')
+  const [mode, setMode] = useState<'local-only' | 'cloud-allowed'>('local-only')
+  const [triage, setTriage] = useState(false)
   const add = useMutation({
     mutationFn: async () => {
       const p = await invoke('ai.provider.upsert', { kind: 'anthropic', label: 'Claude', apiKey: key })
@@ -309,7 +311,11 @@ function AddClaude({ onClose }: { onClose: () => void }) {
       // Only fill routes that are still automatic.
       const fill: Record<string, unknown> = {}
       for (const [k, r] of Object.entries(routes)) if (!cur.routes[k as AiFeature] && k !== 'embeddings') fill[k] = r
-      if (Object.keys(fill).length) await invoke('ai.settings.set', { routes: fill })
+      const patch: Record<string, unknown> = { privacy: { mode } }
+      if (Object.keys(fill).length) patch['routes'] = fill
+      // Auto-triage would send every new message's sender/subject/snippet to Claude; make that an explicit choice.
+      if (mode === 'cloud-allowed') patch['autoTriage'] = triage
+      await invoke('ai.settings.set', patch)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['ai.settings'] })
@@ -317,13 +323,34 @@ function AddClaude({ onClose }: { onClose: () => void }) {
     }
   })
   return (
-    <div className="space-y-2 rounded-md border border-accent/40 p-3">
+    <div className="space-y-3 rounded-md border border-accent/40 p-3">
       <div className="text-sm font-medium">Add Claude</div>
-      <p className="text-xs text-muted">
-        Get an API key at console.anthropic.com. Mail content is only sent when a feature is routed to Claude and the privacy policy allows it. Default model: Claude Opus 5.5.
-      </p>
+      <p className="text-xs text-muted">Get an API key at console.anthropic.com. Default model: Claude Opus 5.5.</p>
       <div className="flex gap-2">
         <Input type="password" placeholder="sk-ant-…" value={key} onChange={(e) => setKey(e.target.value)} autoFocus />
+      </div>
+      <fieldset className="space-y-1.5 text-xs">
+        <legend className="mb-1 font-medium">What may Claude see?</legend>
+        <label className="flex items-start gap-2">
+          <input type="radio" name="claude-privacy" className="mt-0.5" checked={mode === 'local-only'} onChange={() => setMode('local-only')} />
+          <span>
+            <span className="font-medium">Nothing yet (local only).</span> Claude is configured but receives no mail content until you switch the privacy policy to <em>Cloud allowed</em>. Features routed to Claude use a local model instead, or are unavailable.
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="radio" name="claude-privacy" className="mt-0.5" checked={mode === 'cloud-allowed'} onChange={() => setMode('cloud-allowed')} />
+          <span>
+            <span className="font-medium">Mail content, for all accounts.</span> The messages a feature works on are sent to the Anthropic API. You can set individual accounts to <em>Local only</em> above.
+          </span>
+        </label>
+        {mode === 'cloud-allowed' && (
+          <label className="ml-5 flex items-start gap-2">
+            <input type="checkbox" className="mt-0.5" checked={triage} onChange={(e) => setTriage(e.target.checked)} />
+            <span>Also triage new inbox mail automatically (sender, subject and a snippet of every new message go to Claude as it arrives).</span>
+          </label>
+        )}
+      </fieldset>
+      <div className="flex gap-2">
         <Button variant="primary" onClick={() => add.mutate()} disabled={!key} loading={add.isPending}>
           Add
         </Button>
@@ -467,7 +494,7 @@ function IndexAndTriage() {
       <h4 className="text-xs font-semibold uppercase text-muted">Background work</h4>
       <div className="flex items-center gap-3 text-xs">
         <span className="flex-1">
-          Semantic index: {s ? (s.available ? `${s.indexed} messages indexed, ${s.pending} pending${s.model ? ` · ${s.model}` : ''}${s.lastError ? ` · ${s.lastError}` : ''}` : 'sqlite-vec unavailable on this build') : '…'}
+          Semantic index: {s ? (s.available ? `${s.indexed} messages indexed, ${s.pending} pending${s.model ? ` · ${s.model}` : ''}${s.excludedAccounts ? ` · ${s.excludedAccounts} account${s.excludedAccounts === 1 ? '' : 's'} excluded by the privacy policy` : ''}${s.lastError ? ` · ${s.lastError}` : ''}` : 'sqlite-vec unavailable on this build') : '…'}
         </span>
         <Button size="sm" variant="ghost" onClick={() => run.mutate()} loading={run.isPending || !!s?.running} disabled={!s?.available}>
           Index now
@@ -489,7 +516,7 @@ function ToolPermissions({ settings, onChange }: { settings: AiSettingsT; onChan
   return (
     <section className="space-y-2">
       <h4 className="text-xs font-semibold uppercase text-muted">Tool permissions</h4>
-      <p className="text-xs text-muted">Read-only tools always run. These change your mail; by default the assistant and MCP clients must ask first.</p>
+      <p className="text-xs text-muted">Read-only tools always run. These change your mail; by default the assistant asks first. MCP clients use their own per-client allowlists in Settings → MCP.</p>
       <div className="grid grid-cols-2 gap-1 text-xs">
         {risky.map((t) => (
           <label key={t.name} className="flex items-center gap-2">

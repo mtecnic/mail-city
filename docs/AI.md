@@ -24,10 +24,11 @@ No subnet sweeps — only the host you typed (or localhost) is probed.
 
 ## Privacy
 
-- **Local only**: no mail content ever leaves the PC. Features routed to Claude are skipped or fall back to a local model.
-- **Cloud allowed**: Claude may receive the content of the messages a feature works on.
-- Per-account overrides, e.g. keep a work account local-only.
-- Every call is logged (feature, model, tokens, duration, estimated cost) in Settings → AI → Usage log. Message bodies are never logged.
+- **Local only** (the default): no mail content ever leaves the PC. Features routed to Claude fall back to a local model, or are unavailable if there is none.
+- **Cloud allowed**: Claude may receive the content of the messages a feature works on. Adding a Claude key asks you to choose explicitly, and whether new mail should be triaged automatically.
+- Per-account overrides, e.g. keep a work account local-only. Overrides are enforced everywhere, including where no account is selected: the assistant, Ask-my-mail retrieval and the semantic indexer first resolve the model they will use, then restrict themselves to the accounts that model may see. A cloud-routed assistant simply cannot read a local-only account.
+- A provider counts as local when its host is loopback, link-local, an RFC 1918 address, Docker's host alias, a single-label name or a `.local` / `.lan` / `.internal` name. Public IPs and domains are cloud.
+- Every call is logged (feature, model, tokens, duration, estimated cost) in Settings → AI → Usage log. Message bodies are never logged there. Assistant conversations are stored locally (SQLite) including the tool results the model saw; delete a conversation to remove them.
 
 ## Tools
 

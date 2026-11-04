@@ -59,7 +59,8 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 - **Three-pane layout**: sidebar, virtualized message list, reading pane, plus an optional assistant panel.
 - **Views**: All inboxes, Focused (AI triage), Starred, All sent, All drafts, Snoozed, Outbox & local drafts, saved searches, and every folder of every account with unread counts.
-- **Message list**: sender avatars, thread counts, attachment and AI badges (urgent, category, needs reply), hover-to-star, row checkboxes, select-all, Ctrl/Shift-click multi-select, a bulk toolbar (mark read, archive, move, junk, delete) and **drag & drop** onto folders.
+- **Message list**: sender avatars, thread counts, attachment and AI badges (urgent, category, needs reply), hover-to-star, row checkboxes that tick without opening the message, select-all, Ctrl/Shift-click multi-select, a bulk toolbar (mark read, archive, move, junk, delete) and **drag & drop** onto folders.
+- **Conversation view**: a thread opens as a stack of messages, oldest first, with the selected and unread messages expanded and the rest collapsed to one line. Click a header or press `Enter` to expand or collapse; the toolbar and shortcuts act on the highlighted message.
 - **Reading pane**: sanitized HTML in a sandboxed iframe with its own CSP, inline (`cid:`) images resolved locally, **remote images blocked by default** with a one-click load, plain-text messages linkified, attachment chips with open / save-as / copy-image, raw source viewer with "Save .eml", snooze presets, and auto mark-as-read.
 - **Actions**: reply, reply-all, forward, archive, delete (to Trash, or permanently from Trash/Junk), junk / not junk, star, read / unread, move, snooze (later today, tomorrow, this weekend, next week, or pick a date & time), copy link, view source.
 - **Folder management**: create subfolders, rename, delete (system folders protected), mark all read, empty Trash / Junk, sync now.
@@ -69,7 +70,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 - **Rich-text editor** (TipTap): bold, italic, underline, bullet and numbered lists, block quotes, links, clear formatting.
 - **Docked compose windows**, several at once, minimizable, with autosaved local drafts and "close and keep" that also appends the draft to the server's Drafts folder.
-- **Addressing**: contact autocomplete with ranked suggestions, chips, paste a comma- or semicolon-separated list, Cc/Bcc on demand, From picker across the account's identities.
+- **Addressing**: contact autocomplete with ranked suggestions, chips, paste a comma- or semicolon-separated list, Cc/Bcc on demand, and a From picker that lists every identity of every account, grouped by account, so a draft can be sent from any mailbox.
 - **Identities & signatures**: multiple send-as aliases per account with their own name, Reply-To and signature. Replies automatically pick the identity the message was addressed to.
 - **Reply / forward** with proper quoting, `In-Reply-To` / `References` threading headers, reply-all de-duplication that drops your own addresses, and re-attached forwards.
 - **Attachments** via file picker, with size display; outgoing MIME built by nodemailer's `MailComposer`.
@@ -78,7 +79,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 ### Search
 
-Full-text search over subject, sender, recipients and downloaded bodies, powered by SQLite FTS5 with BM25 ranking and a recency boost. Trash and Junk are excluded unless you ask for them.
+Full-text search over subject, sender, recipients and downloaded bodies, powered by SQLite FTS5 with BM25 ranking and a recency boost. Results update live as you type. A search started inside a folder stays inside that folder, and clearing the box returns you to it. Trash and Junk are excluded unless you ask for them.
 
 ```text
 from:alice to:bob cc:carol subject:"quarterly report"
@@ -126,7 +127,8 @@ Type a hostname, IP or URL, or click **Scan this machine**, and Mail City figure
 
 ### Privacy policy
 
-- **Local only** or **Cloud allowed**, globally and per account. An account can only be made stricter than the global default, so a work account can be pinned to local models while personal accounts use Claude.
+- **Local only** (the default) or **Cloud allowed**, globally and per account. An account can only be made stricter than the global default, so a work account can be pinned to local models while personal accounts use Claude. Adding a Claude key asks you to choose explicitly, including whether new mail may be triaged automatically.
+- Overrides hold everywhere. The assistant, Ask-my-mail and the semantic indexer resolve the model first and then restrict themselves to the accounts that model may see, so a cloud-routed assistant cannot read a local-only account even from the unified inbox.
 - A provider is "local" when it resolves to loopback, link-local, an RFC 1918 range, Docker's host alias, a single-label hostname or a `.local` / `.lan` / `.internal` name. Public IPs and public domains are treated as cloud.
 - Every call is written to the **usage log** with feature, provider, model, input and output tokens, cache hits, estimated cost (for Anthropic models) and duration. Message bodies are never logged there.
 - API keys and the MCP bearer token are stored encrypted in the OS keystore and are never exposed to the renderer.
@@ -177,7 +179,7 @@ Mail City hosts a [Model Context Protocol](https://modelcontextprotocol.io) serv
 | **How** | The client launches `MailCity.exe --mcp` headless on demand | Enabled in Settings → MCP while the app runs; bound to `127.0.0.1` |
 | **Auth** | Process ownership | `Authorization: Bearer <token>`, 24 random bytes, stored in the OS keystore, constant-time compared, DNS-rebinding protection on |
 | **Confirmations** | No window, so write and destructive tools run **only** if allow-listed for the client | Confirmation cards appear in the app: Allow once / Always for this client / Deny |
-| **Scoping** | Per-client tool allowlists and an account allowlist (share all accounts, or only some) | Same, keyed by the client's reported name |
+| **Scoping** | Per-client tool allowlists and an account allowlist (share all accounts, or only some); every tool, including rules, contacts, move targets and reply lookups, stays inside the shared accounts | Same, keyed by the client's reported name |
 
 Settings → MCP generates ready-to-paste config for Claude Code and Claude Desktop:
 
@@ -197,6 +199,7 @@ Full details: [docs/MCP.md](docs/MCP.md).
 |---|---|---|---|
 | `c` | Compose | `r` / `a` / `f` | Reply / reply all / forward |
 | `/` | Focus search | `e` | Archive |
+| `Enter` | Expand / collapse message in a conversation | | |
 | `j` / `k` | Next / previous message (list focused) | `#` or `Delete` | Delete |
 | `x` | Toggle selection of the current message | `s` | Star |
 | `v` | Move to folder… | `u` / `Shift+I` | Mark unread / read |
@@ -307,17 +310,15 @@ pnpm build && xvfb-run -a pnpm test:e2e   # Playwright-Electron smoke test (Linu
 
 ## Audit status and known gaps
 
-The whole codebase was audited against this README. Everything above exists and is wired up. These are the honest gaps, with the full list and severity in [docs/AUDIT.md](docs/AUDIT.md):
+The whole codebase was audited against this README. Everything above exists and is wired up. The audit's highest-priority findings (per-account privacy enforcement, MCP account scoping, cloud-first defaults, the conversation view, duplicated server drafts and local-only snooze wake-up) have been fixed. These are the remaining honest gaps, with the full list and severity in [docs/AUDIT.md](docs/AUDIT.md):
 
-- **Conversation view.** The list shows thread counts and the summarizer works per thread, but the reading pane shows one message at a time rather than the whole conversation.
 - **Labels are read-only.** Gmail labels are synced and displayed; adding or removing them from the app is not implemented yet.
-- **No print, no cross-account move, no Enter-to-open.** Printing a message, dragging a message between accounts, and the `Enter` key in the list are not implemented.
-- **Snooze wake-up is local.** A snoozed message is re-marked unread locally when it wakes; the flag is not pushed to the server.
-- **Server drafts can duplicate.** Each "close and keep" appends a new copy to the server's Drafts folder instead of replacing the previous one.
+- **No print and no cross-account move.** Printing a message and dragging a message between accounts are not implemented.
 - **Density setting and the "contacts" remote-image mode** are stored but have no effect yet.
 - **macOS** has no `mailto:` handler and **Linux** has no launch-at-login; Windows is the primary target.
-- **AI privacy edge cases.** In the unified view (no account selected) the assistant and the semantic indexer check only the global policy, not per-account overrides. The usage log never contains bodies, but assistant session transcripts do store tool results locally.
-- **Defaults lean convenient.** AI, auto-triage and background indexing are on by default and the privacy default is *Cloud allowed*, which matters the moment you add a Claude key. Flip to *Local only* first if that is not what you want.
+- **Servers without UIDPLUS** cannot report the UID of an appended draft, so on those servers "close and keep" may still leave an older copy in Drafts.
+- **Assistant transcripts** are stored locally with the tool results the model saw; delete a conversation to remove them.
+- **Upgrade note.** The privacy default changed to *Local only*. If you added a Claude key before this change and never set a policy, switch Settings → AI → Privacy back to *Cloud allowed* to keep using Claude for mail content.
 
 ## License
 

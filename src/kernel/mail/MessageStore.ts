@@ -2,7 +2,7 @@
  * Local message persistence shared by the sync engine (writes) and the
  * MessageService (reads + optimistic updates).
  */
-import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, like, lt, or, sql } from 'drizzle-orm'
 import type { DB } from '../db'
 import { attachments, folders, messageBodies, messages, type Address, type FolderRow, type MessageFlags, type MessageRow } from '../db/schema'
 import type { HeaderRecord } from '../providers/ImapProvider'
@@ -248,6 +248,28 @@ export class MessageStore {
 
   private dropFts(ids: string[]): void {
     for (const id of ids) this.db.run(sql`DELETE FROM messages_fts WHERE message_id = ${id}`)
+  }
+
+  /** Which of `addresses` appear as sender or recipient in mail of these accounts (lower-cased). */
+  addressesSeenIn(accountIds: string[], addresses: string[]): Set<string> {
+    const want = [...new Set(addresses.map((a) => a.toLowerCase()))]
+    const out = new Set<string>()
+    if (!accountIds.length || !want.length) return out
+    const rows = this.db
+      .select({ from: messages.fromAddr, to: messages.toList, cc: messages.ccList })
+      .from(messages)
+      .where(and(inArray(messages.accountId, accountIds), or(inArray(messages.fromAddr, want), ...want.map((w) => like(messages.toList, `%${w.replace(/[%_]/g, '')}%`)), ...want.map((w) => like(messages.ccList, `%${w.replace(/[%_]/g, '')}%`)))))
+      .limit(5000)
+      .all()
+    for (const r of rows) {
+      const f = r.from.toLowerCase()
+      if (want.includes(f)) out.add(f)
+      for (const a of [...r.to, ...r.cc]) {
+        const x = a.address.toLowerCase()
+        if (want.includes(x)) out.add(x)
+      }
+    }
+    return out
   }
 
   listByIds(ids: string[]): MessageListItem[] {

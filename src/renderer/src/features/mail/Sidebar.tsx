@@ -34,7 +34,12 @@ export function Sidebar({ onAddAccount, onSettings, onAssistant }: { onAddAccoun
     void qc.invalidateQueries({ queryKey: ['messages'] })
   }
   const unifiedUnread = folders.data?.filter((f) => f.specialUse === 'inbox').reduce((n, f) => n + f.unreadCount, 0) ?? 0
-  const isSel = (s: MailboxSelection) => JSON.stringify(s) === JSON.stringify(mailbox)
+  const isSel = (s: MailboxSelection) => {
+    // While searching inside a folder, keep that folder highlighted.
+    const cur = mailbox.kind === 'search' && mailbox.within && s.kind !== 'search' ? mailbox.within : mailbox
+    const strip = (x: MailboxSelection) => (x.kind === 'search' ? { kind: 'search', query: x.query } : x)
+    return JSON.stringify(strip(s)) === JSON.stringify(strip(cur))
+  }
 
   const onDropToFolder = (f: Folder) => (e: DragEvent) => {
     e.preventDefault()
@@ -82,10 +87,10 @@ export function Sidebar({ onAddAccount, onSettings, onAssistant }: { onAddAccoun
                 icon={Search}
                 label={s.name}
                 active={isSel({ kind: 'search', query: s.query })}
-                onClick={() => setMailbox({ kind: 'search', query: s.query })}
+                onClick={() => setMailbox({ kind: 'search', query: s.query, within: null })}
                 onContextMenu={(e) =>
                   menu.open(e, [
-                    { label: 'Run search', onSelect: () => setMailbox({ kind: 'search', query: s.query }) },
+                    { label: 'Run search', onSelect: () => setMailbox({ kind: 'search', query: s.query, within: null }) },
                     { label: 'Remove', danger: true, onSelect: () => void invoke('search.saved.set', (savedSearches.data ?? []).filter((x) => x.id !== s.id)).then(() => qc.invalidateQueries({ queryKey: ['savedSearches'] })) }
                   ])
                 }

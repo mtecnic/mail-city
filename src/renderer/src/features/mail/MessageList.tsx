@@ -57,7 +57,7 @@ export function useMessageMenuDeps(): MessageMenuDeps {
 }
 
 export function MessageList() {
-  const { mailbox, selectedMessageId, selectedIds, selectMessage, clearSelection } = useUi()
+  const { mailbox, selectedMessageId, selectedIds, selectMessage, toggleSelected, clearSelection } = useUi()
   const q = useMessageList(mailbox)
   const actions = useMailActions()
   const deps = useMessageMenuDeps()
@@ -86,22 +86,18 @@ export function MessageList() {
   }
 
   const onKey = (e: React.KeyboardEvent) => {
+    // Keys typed into a checkbox or other control must not move the selection.
+    if ((e.target as HTMLElement).closest('input, button, [contenteditable="true"]')) return
     const idx = items.findIndex((m) => m.id === selectedMessageId)
-    if (e.key === 'j' || e.key === 'ArrowDown') {
-      e.preventDefault()
-      const next = items[Math.min(items.length - 1, idx + 1)]
-      if (next) {
-        selectMessage(next.id, e.shiftKey ? { range: items.slice(Math.min(idx, idx + 1), Math.max(idx, idx + 1) + 1).map((x) => x.id).concat(selectedIds) } : undefined)
-        rowVirtualizer.scrollToIndex(Math.min(items.length - 1, idx + 1))
-      }
-    } else if (e.key === 'k' || e.key === 'ArrowUp') {
-      e.preventDefault()
-      const prev = items[Math.max(0, idx - 1)]
-      if (prev) {
-        selectMessage(prev.id)
-        rowVirtualizer.scrollToIndex(Math.max(0, idx - 1))
-      }
-    }
+    const dir = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
+    if (!dir) return
+    e.preventDefault()
+    const to = Math.max(0, Math.min(items.length - 1, idx + dir))
+    const target = items[to]
+    if (!target) return
+    if (e.shiftKey) selectMessage(target.id, { range: [...new Set([...selectedIds, selectedMessageId ?? target.id, target.id])] })
+    else selectMessage(target.id)
+    rowVirtualizer.scrollToIndex(to)
   }
 
   if (q.isLoading) {
@@ -113,8 +109,9 @@ export function MessageList() {
   }
   if (!items.length) return <div className="flex flex-1 items-center justify-center text-sm text-muted">{q.isError ? q.error.message : 'Nothing here.'}</div>
 
-  const allSelected = items.length > 0 && selectedIds.length >= items.length
+  const allSelected = items.length > 0 && selected.length >= items.length
   const ids = selectedIds
+  const multi = selectedIds.length > 1
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -159,8 +156,10 @@ export function MessageList() {
                     m={m}
                     active={m.id === selectedMessageId}
                     checked={selectedIds.includes(m.id)}
+                    showCheckbox={multi || selectedIds.length > 0}
                     onClick={(e) => {
-                      if (e.ctrlKey || e.metaKey) selectMessage(m.id, { toggle: true })
+                      // With several messages ticked, a plain click adds or removes a row instead of replacing the selection.
+                      if (e.ctrlKey || e.metaKey || multi) toggleSelected(m.id)
                       else if (e.shiftKey && selectedMessageId) {
                         const a = items.findIndex((x) => x.id === selectedMessageId)
                         const b = v.index
@@ -168,7 +167,7 @@ export function MessageList() {
                       } else selectMessage(m.id)
                     }}
                     onContextMenu={(e) => openMenuFor(e, m)}
-                    onToggle={() => selectMessage(m.id, { toggle: true })}
+                    onToggle={() => toggleSelected(m.id)}
                     onStar={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })}
                     dragIds={selectedIds.includes(m.id) ? selectedIds : [m.id]}
                   />
@@ -186,28 +185,32 @@ export function MessageList() {
   )
 }
 
-function Row({ m, active, checked, onClick, onContextMenu, onToggle, onStar, dragIds }: { m: MessageListItem; active: boolean; checked: boolean; onClick: (e: React.MouseEvent) => void; onContextMenu: (e: React.MouseEvent) => void; onToggle: () => void; onStar: () => void; dragIds: string[] }) {
+function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggle, onStar, dragIds }: { m: MessageListItem; active: boolean; checked: boolean; showCheckbox: boolean; onClick: (e: React.MouseEvent) => void; onContextMenu: (e: React.MouseEvent) => void; onToggle: () => void; onStar: () => void; dragIds: string[] }) {
   const unread = !m.flags.seen
   const who = m.from.name || m.from.address
+  const onCheckbox = useRef(false)
   return (
     <div
-      className={cn('group flex cursor-default gap-2 border-b border-border px-2 py-2 select-none', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')}
+      className={cn('group flex cursor-default gap-1 border-b border-border py-2 pr-2 pl-1 select-none', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onMouseDown={(e) => (onCheckbox.current = !!(e.target as HTMLElement).closest('[data-select]'))}
       draggable
       onDragStart={(e) => {
+        if (onCheckbox.current) return e.preventDefault()
         e.dataTransfer.setData(DND_TYPE, JSON.stringify({ ids: dragIds, accountId: m.accountId }))
         e.dataTransfer.effectAllowed = 'move'
       }}
     >
-      <input
-        type="checkbox"
-        className={cn('mt-2.5 size-3.5 shrink-0', !checked && 'opacity-0 group-hover:opacity-100')}
-        checked={checked}
+      {/* A generous hit area around the checkbox: a near miss must tick, not open, the row. */}
+      <label
+        data-select
+        className="flex shrink-0 cursor-pointer items-start px-1.5 pt-2.5"
         onClick={(e) => e.stopPropagation()}
-        onChange={onToggle}
-        aria-label="Select"
-      />
+        title="Select"
+      >
+        <input type="checkbox" className={cn('size-3.5', !checked && !showCheckbox && 'opacity-0 group-hover:opacity-100')} checked={checked} onChange={onToggle} aria-label="Select" />
+      </label>
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: avatarColor(m.from.address) }}>
         {initials(m.from.name, m.from.address)}
       </div>

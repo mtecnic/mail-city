@@ -26,7 +26,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const [help, setHelp] = useState(false)
   const [assistant, setAssistant] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
-  const { mailbox, selectedMessageId, selectedIds, selectMessage, editAccount, closeEditAccount, sourceMessageId, setSourceMessageId } = useUi()
+  const { mailbox, selectedMessageId, selectedIds, selectMessage, toggleSelected, editAccount, closeEditAccount, sourceMessageId, setSourceMessageId, toggleCard } = useUi()
   const actions = useMailActions()
   const deps = useMessageMenuDeps()
   const menu = useContextMenu()
@@ -38,7 +38,11 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
     if (mailbox.kind === 'unified') return { inbox: 'All inboxes', focused: 'Focused', flagged: 'Starred', sent: 'All sent', drafts: 'All drafts' }[mailbox.specialUse]
     if (mailbox.kind === 'outbox') return 'Outbox'
     if (mailbox.kind === 'snoozed') return 'Snoozed'
-    if (mailbox.kind === 'search') return `Search: ${mailbox.query}`
+    if (mailbox.kind === 'search') {
+      const w = mailbox.within
+      const where = w?.kind === 'folder' ? folders.data?.find((f) => f.id === w.folderId)?.name : null
+      return where ? `Search in ${where}: ${mailbox.query}` : `Search: ${mailbox.query}`
+    }
     return folders.data?.find((f) => f.id === mailbox.folderId)?.name ?? ''
   })()
 
@@ -82,7 +86,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
           actions.setFlags.mutate({ ids, flags: { seen: true } })
           break
         case 'x':
-          if (selectedMessageId) selectMessage(selectedMessageId, { toggle: true })
+          if (selectedMessageId) toggleSelected(selectedMessageId)
           break
         case '!':
           deps.actions.junk({ ids, junk: true })
@@ -106,6 +110,9 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
         case 'f':
           if (selectedMessageId) void compose.reply(selectedMessageId, 'forward')
           break
+        case 'Enter':
+          toggleCard()
+          break
         case 'Escape':
           selectMessage(null)
           break
@@ -116,7 +123,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [selectedIds, selectedMessageId, actions, selectMessage, compose, deps, list.data, menu])
+  }, [selectedIds, selectedMessageId, actions, selectMessage, toggleSelected, compose, deps, list.data, menu, toggleCard])
 
   return (
     <div className="flex h-screen w-screen flex-col">

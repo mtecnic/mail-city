@@ -179,6 +179,9 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       summarize: (i) => `Move ${i.ids.length} message(s) to ${k.store.getFolder(i.toFolderId)?.path ?? i.toFolderId}`,
       handler: (i, ctx) => {
         guard(k, ctx, i.ids)
+        const dest = k.store.getFolder(i.toFolderId)
+        if (!dest) throw new Error('Destination folder not found')
+        scopeAccounts(k, ctx, dest.accountId)
         k.mail.move(i.ids, i.toFolderId)
         return { ok: true }
       }
@@ -226,6 +229,7 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       summarize: (i) => `Create draft "${i.subject}" to ${i.to.join(', ')}`,
       handler: async (i, ctx) => {
         scopeAccounts(k, ctx, i.accountId)
+        guardReplyTarget(k, ctx, i.accountId, i.inReplyToMessageId)
         const identity = k.identities.defaultFor(i.accountId)
         const html = `<p>${escapeHtml(i.body).replace(/\n/g, '<br>')}</p>`
         const d = k.drafts.save({
@@ -261,6 +265,7 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       summarize: (i) => `Send "${i.subject}" to ${i.to.join(', ')}${i.cc?.length ? ` (cc ${i.cc.join(', ')})` : ''}`,
       handler: async (i, ctx) => {
         scopeAccounts(k, ctx, i.accountId)
+        guardReplyTarget(k, ctx, i.accountId, i.inReplyToMessageId)
         const identity = k.identities.defaultFor(i.accountId)
         const d = k.drafts.save({
           accountId: i.accountId,
@@ -283,7 +288,14 @@ export function buildMailTools(k: Kernel): ToolRegistry {
       description: 'Find people by name or email address, ranked by how often the user corresponds with them.',
       risk: 'read',
       input: z.object({ query: z.string(), limit: z.number().int().max(25).optional() }),
-      handler: (i) => k.contacts.suggest(i.query, i.limit ?? 10).map((c) => ({ name: c.name, email: c.address }))
+      handler: (i, ctx) => {
+        const limit = i.limit ?? 10
+        const found = k.contacts.suggest(i.query, ctx.accountIds ? limit * 4 : limit)
+        if (!ctx.accountIds) return found.slice(0, limit).map((c) => ({ name: c.name, email: c.address }))
+        // Scoped callers only learn about people who appear in mail of the accounts they may see.
+        const seen = k.store.addressesSeenIn(ctx.accountIds, found.map((c) => c.address))
+        return found.filter((c) => seen.has(c.address.toLowerCase())).slice(0, limit).map((c) => ({ name: c.name, email: c.address }))
+      }
     }),
     defineTool({
       name: 'rules_create',
@@ -311,8 +323,22 @@ export function buildMailTools(k: Kernel): ToolRegistry {
         applyToExisting: z.boolean().optional().describe('Also run against cached mail now')
       }),
       summarize: (i) => `Create rule "${i.name}" (${i.actions.map((a) => a.type).join(', ')})`,
-      handler: async (i) => {
-        const r = k.rules.save({ name: i.name, conditions: { match: i.match, items: i.conditions }, actions: i.actions, accountIds: i.accountIds ?? [] })
+      handler: async (i, ctx) => {
+        // Scoped callers can only create rules for the accounts they may see, and the
+        // rule itself must name those accounts (never "all accounts").
+        let accountIds = i.accountIds ?? []
+        if (ctx.accountIds) {
+          if (!accountIds.length) accountIds = ctx.accountIds
+          for (const id of accountIds) scopeAccounts(k, ctx, id)
+          for (const a of i.actions) {
+            if (a.type === 'move') {
+              const f = k.store.getFolder(a.folderId)
+              if (!f) throw new Error(`Folder ${a.folderId} not found`)
+              scopeAccounts(k, ctx, f.accountId)
+            }
+          }
+        }
+        const r = k.rules.save({ name: i.name, conditions: { match: i.match, items: i.conditions }, actions: i.actions, accountIds })
         const affected = i.applyToExisting ? await k.rules.applyToExisting({ ruleId: r.id }) : 0
         return { ruleId: r.id, affected }
       }
@@ -327,6 +353,15 @@ function guard(k: Kernel, ctx: ToolContext, ids: string[]) {
     const m = k.store.getMessage(id)
     if (m && !ctx.accountIds.includes(m.accountId)) throw new Error(`Message ${id} is not accessible in this context`)
   }
+}
+
+/** A reply/forward target must be readable in this context and belong to the sending account. */
+function guardReplyTarget(k: Kernel, ctx: ToolContext, accountId: string, messageId?: string) {
+  if (!messageId) return
+  const m = k.store.getMessage(messageId)
+  if (!m) throw new Error(`Message ${messageId} not found`)
+  if (ctx.accountIds && !ctx.accountIds.includes(m.accountId)) throw new Error(`Message ${messageId} is not accessible in this context`)
+  if (m.accountId !== accountId) throw new Error('inReplyToMessageId belongs to a different account than accountId')
 }
 
 function truncate(s: string, max: number): string {

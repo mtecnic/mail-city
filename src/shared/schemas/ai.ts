@@ -78,7 +78,8 @@ export const AiSettingsSchema = z.object({
   routes: AiRoutesSchema.prefault({}),
   privacy: z
     .object({
-      mode: PrivacyModeSchema.default('cloud-allowed'),
+      /** Local-only by default: nothing reaches a cloud API until the user opts in. */
+      mode: PrivacyModeSchema.default('local-only'),
       perAccount: z.record(z.string(), PrivacyModeSchema).prefault({})
     })
     .prefault({}),

@@ -54,7 +54,7 @@ export class Agent extends TypedEmitter<AgentEvents> {
     private readonly db: DB,
     private readonly ai: AiService,
     private readonly tools: ToolRegistry,
-    private readonly contextBuilder: (ctx: AgentSession['context']) => string
+    private readonly contextBuilder: (ctx: AgentSession['context'], accountIds?: string[]) => string
   ) {
     super()
   }
@@ -139,11 +139,20 @@ export class Agent extends TypedEmitter<AgentEvents> {
     s.history.push({ role: 'user', content: text })
 
     const settings = this.ai.get()
-    const accountIds = s.context.accountId ? [s.context.accountId] : undefined
     const toolDefs = this.tools.toDefinitions()
-    const system = `${AGENT_SYSTEM}\n\n${this.contextBuilder(s.context)}`
+    let accountIds: string[] | undefined
+    let system = ''
 
     try {
+      // Privacy: resolve the chat route first, then restrict every tool call to the
+      // accounts that route may see. A cloud model never gets to read local-only accounts.
+      const contextIds = s.context.accountId ? [s.context.accountId] : undefined
+      const route = this.ai.routeFor('chat', contextIds ?? [])
+      if (!route) throw new Error(settings.enabled ? 'No AI model is available for the assistant under the current privacy settings. Configure one in Settings → AI.' : 'AI features are disabled in Settings → AI.')
+      accountIds = route.provider.isLocal ? contextIds : this.ai.accountsAllowedFor(route.provider, contextIds)
+      if (s.context.accountId && !accountIds?.includes(s.context.accountId)) throw new Error('This account is set to local-only and the assistant is routed to a cloud model. Route the assistant to a local model or change the privacy policy in Settings → AI.')
+      system = `${AGENT_SYSTEM}\n\n${this.contextBuilder(s.context, accountIds)}`
+
       for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
         if (abort.signal.aborted) break
         const r = await this.ai.chat('chat', { system, messages: s.history.slice(-MAX_HISTORY_MESSAGES), tools: toolDefs, maxTokens: 4000, accountIds, signal: abort.signal, cache: true }, (d) => this.emit('delta', s.id, d))

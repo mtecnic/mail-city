@@ -15,6 +15,7 @@ export type EngineEvents = {
   newMessages: [accountId: string, folderId: string, messageIds: string[]]
   headersStored: [accountId: string, folderId: string, messageIds: string[]]
   bodyFetched: [messageId: string]
+  appended: [accountId: string, folderId: string, uid: number | undefined, op: Extract<PendingOp, { kind: 'append' }>]
 }
 
 /** Supervises one AccountSyncer per enabled account. */
@@ -117,6 +118,7 @@ export class SyncEngine extends TypedEmitter<EngineEvents> {
       syncer.on('newMessages', (folderId, ids) => this.emit('newMessages', a.id, folderId, ids))
       syncer.on('headersStored', (folderId, ids) => this.emit('headersStored', a.id, folderId, ids))
       syncer.on('bodyFetched', (id) => this.emit('bodyFetched', id))
+      syncer.on('appended', (folderId, uid, op) => this.emit('appended', a.id, folderId, uid, op))
       this.syncers.set(a.id, syncer)
       this.log.info('starting syncer', { account: a.email })
       syncer.start()

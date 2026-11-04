@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke, onEvent } from '@renderer/lib/api'
 import type { MailboxSelection } from '@renderer/store/ui'
 import type { ChannelInput } from '@shared/ipc'
@@ -36,25 +36,37 @@ export function useMessageList(sel: MailboxSelection) {
     [qc, sel]
   )
   const isSearch = sel.kind === 'search'
+  // A search started inside a folder stays inside that folder.
+  const scope = isSearch && sel.within?.kind === 'folder' ? { accountId: sel.within.accountId, folderId: sel.within.folderId } : {}
   return useInfiniteQuery({
-    queryKey: isSearch ? ['messages', 'search', sel.query] : key,
+    queryKey: isSearch ? ['messages', 'search', sel.query, scope] : key,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       isSearch
-        ? invoke('search.run', { query: sel.query, limit: PAGE, offset: pageParam ? Number(pageParam) : 0 })
+        ? invoke('search.run', { query: sel.query, ...scope, limit: PAGE, offset: pageParam ? Number(pageParam) : 0 })
         : invoke('messages.list', { ...base, before: pageParam, limit: PAGE }),
-    getNextPageParam: (last, pages) => (last.length < PAGE ? undefined : isSearch ? String(pages.length * PAGE) : last[last.length - 1]?.date)
+    getNextPageParam: (last, pages) => (last.length < PAGE ? undefined : isSearch ? String(pages.length * PAGE) : last[last.length - 1]?.date),
+    // Keep rows on screen while a refetch or the next keystroke's search is in flight.
+    placeholderData: keepPreviousData
   })
 }
 
-export function useMessage(id: string | null) {
+export function useMessage(id: string | null, enabled = true) {
   const qc = useQueryClient()
   useEffect(() => onEvent('messages.bodyFetched', (e) => qc.invalidateQueries({ queryKey: ['message', e.id] })), [qc])
-  return useQuery({ queryKey: ['message', id], queryFn: () => invoke('messages.get', { id: id! }), enabled: !!id, staleTime: 60_000 })
+  return useQuery({ queryKey: ['message', id], queryFn: () => invoke('messages.get', { id: id! }), enabled: !!id && enabled, staleTime: 60_000 })
 }
 
+/** Every message of a conversation, oldest first. */
 export function useThread(threadId: string | null | undefined) {
-  return useQuery({ queryKey: ['thread', threadId], queryFn: () => invoke('messages.thread', { threadId: threadId! }), enabled: !!threadId })
+  const qc = useQueryClient()
+  useEffect(() => onEvent('messages.changed', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
+  useEffect(() => onEvent('messages.bodyFetched', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
+  return useQuery({
+    queryKey: ['thread', threadId],
+    queryFn: async () => (await invoke('messages.thread', { threadId: threadId! })).slice().sort((a, b) => a.date.localeCompare(b.date)),
+    enabled: !!threadId
+  })
 }
 
 export function useMailActions() {
@@ -63,6 +75,7 @@ export function useMailActions() {
     void qc.invalidateQueries({ queryKey: ['messages'] })
     void qc.invalidateQueries({ queryKey: ['folders'] })
     void qc.invalidateQueries({ queryKey: ['thread'] })
+    void qc.invalidateQueries({ queryKey: ['message'] })
   }
   const setFlags = useMutation({ mutationFn: (v: { ids: string[]; flags: Partial<MessageFlags> }) => invoke('messages.setFlags', v), onSettled: refresh })
   const archive = useMutation({ mutationFn: (ids: string[]) => invoke('messages.archive', { ids }), onSettled: refresh })
