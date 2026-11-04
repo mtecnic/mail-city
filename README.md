@@ -97,6 +97,10 @@ A rules engine with **conditions** on From, To, Cc, any recipient, Subject, Body
 
 Harvested automatically from every message you receive and send, ranked for autocomplete by how often you write to them and how recently. Edit names and notes, merge duplicates, and import or export vCard.
 
+### Backup & restore
+
+One passphrase-encrypted `.mailcity` file carries your whole setup: every account with its password or OAuth tokens, send-as identities and signatures, rules, contacts, general and AI settings, OAuth client ids and AI API keys. Mail itself is not included and syncs again after a restore. The file is encrypted with scrypt and AES-256-GCM, so it is portable between computers and operating systems. Restore from the welcome screen on a new machine or from Settings → General at any time; existing accounts are matched by address and updated, nothing is deleted.
+
 ### Windows integration
 
 Toast notifications for new inbox mail (single or grouped, with a sound option, muted by rules), system tray with a menu and unread-aware icon, taskbar badge, close-to-tray, launch at login, a `mailto:` protocol handler, a jump list (New message, Inbox), single-instance enforcement, and automatic updates via GitHub Releases (checked on launch and every six hours, installed on quit). Light, dark and system themes.
@@ -250,6 +254,14 @@ Produces `release\Mail City-Setup-1.0.0.exe` (NSIS, per-user, choosable install 
 - Add an account from the welcome screen. iCloud, Yahoo, Fastmail, Zoho, GMX, Proton Bridge and plain IMAP accounts work right away with a password or app password; server settings are detected automatically.
 - **Gmail and Outlook sign in with OAuth and need a client ID.** Paste your own in **Settings → Accounts → OAuth clients** ([docs/OAUTH-SETUP.md](docs/OAUTH-SETUP.md), about five minutes), bake defaults into a build via `.env` (see `.env.example`), or use a Gmail *App Password* as a shortcut. Google Workspace admins must have IMAP enabled for the domain.
 - AI is optional. **Settings → AI → Scan this machine** finds a running Ollama, LM Studio, llama.cpp or similar server, or add a Claude API key. Everything else works without any model configured.
+
+### Moving to another PC
+
+1. On the old PC: **Settings → General → Export a backup…**, choose a passphrase, save the `.mailcity` file.
+2. On the new PC: install Mail City, click **Restore from a backup** on the welcome screen, pick the file, enter the passphrase.
+3. Every account comes back with its sign-in (OAuth refresh tokens included, so no re-authentication), along with rules, contacts, identities, settings and AI keys. Mail syncs fresh from the servers. The MCP HTTP endpoint stays off until you enable it, and gets a new token on the new machine.
+
+The same file also works as a safety net before reinstalling Windows. Keep it with the passphrase: together they unlock everything in it.
 
 ### Troubleshooting
 

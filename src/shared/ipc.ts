@@ -9,6 +9,7 @@
  * Events (main -> renderer) are declared in `events` the same way.
  */
 import { z } from 'zod'
+import { BackupHeaderSchema, ImportResultSchema } from './schemas/backup'
 import { AppSettingsSchema } from './schemas/settings'
 import { AccountSummarySchema, AccountTypeSchema, ServerConfigSchema } from './schemas/account'
 import { OAuthClientConfigSchema, OAuthStartResultSchema } from './schemas/oauth'
@@ -226,6 +227,10 @@ export const channels = {
   'update.check': defineChannel(z.void(), z.void()),
   'update.install': defineChannel(z.void(), z.void()),
   'app.openLogs': defineChannel(z.void(), z.void()),
+  /** Passphrase-encrypted backup of accounts, secrets, settings and keys (never the mail cache). */
+  'backup.export': defineChannel(z.object({ passphrase: z.string() }), z.object({ ok: z.boolean(), path: z.string().optional(), header: BackupHeaderSchema.optional() })),
+  'backup.inspect': defineChannel(z.void(), z.object({ path: z.string(), header: BackupHeaderSchema }).nullable()),
+  'backup.import': defineChannel(z.object({ path: z.string(), passphrase: z.string() }), ImportResultSchema),
 
   // ---- AI ------------------------------------------------------------------
   'ai.settings.get': defineChannel(z.void(), AiSettingsSchema),
