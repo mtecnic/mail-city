@@ -19,6 +19,8 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
   const listItem = list.data?.pages.flat().find((x) => x.id === selectedMessageId)
   const actions = useMailActions()
   const m = q.data
+  // Hooks must run on every render path: the thread query is keyed on the loaded message.
+  const thread = useThread(m?.threadId)
 
   if (selectedIds.length > 1) {
     return (
@@ -47,7 +49,6 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
     )
   }
 
-  const thread = useThread(m.threadId)
   const items = thread.data ?? []
   const menuItem = listItem ?? items.find((x) => x.id === m.id)
   const isConversation = items.length > 1

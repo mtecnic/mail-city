@@ -59,7 +59,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 - **Three-pane layout**: sidebar, virtualized message list, reading pane, plus an optional assistant panel.
 - **Views**: All inboxes, Focused (AI triage), Starred, All sent, All drafts, Snoozed, Outbox & local drafts, saved searches, and every folder of every account with unread counts.
-- **Message list**: sender avatars, thread counts, attachment and AI badges (urgent, category, needs reply), hover-to-star, row checkboxes, select-all, Ctrl/Shift-click multi-select, a bulk toolbar (mark read, archive, move, junk, delete) and **drag & drop** onto folders.
+- **Message list**: sender avatars, thread counts, attachment and AI badges (urgent, category, needs reply), hover-to-star, row checkboxes that tick without opening the message, select-all, Ctrl/Shift-click multi-select, a bulk toolbar (mark read, archive, move, junk, delete) and **drag & drop** onto folders.
 - **Conversation view**: a thread opens as a stack of messages, oldest first, with the selected and unread messages expanded and the rest collapsed to one line. Click a header or press `Enter` to expand or collapse; the toolbar and shortcuts act on the highlighted message.
 - **Reading pane**: sanitized HTML in a sandboxed iframe with its own CSP, inline (`cid:`) images resolved locally, **remote images blocked by default** with a one-click load, plain-text messages linkified, attachment chips with open / save-as / copy-image, raw source viewer with "Save .eml", snooze presets, and auto mark-as-read.
 - **Actions**: reply, reply-all, forward, archive, delete (to Trash, or permanently from Trash/Junk), junk / not junk, star, read / unread, move, snooze (later today, tomorrow, this weekend, next week, or pick a date & time), copy link, view source.
@@ -70,7 +70,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 - **Rich-text editor** (TipTap): bold, italic, underline, bullet and numbered lists, block quotes, links, clear formatting.
 - **Docked compose windows**, several at once, minimizable, with autosaved local drafts and "close and keep" that also appends the draft to the server's Drafts folder.
-- **Addressing**: contact autocomplete with ranked suggestions, chips, paste a comma- or semicolon-separated list, Cc/Bcc on demand, From picker across the account's identities.
+- **Addressing**: contact autocomplete with ranked suggestions, chips, paste a comma- or semicolon-separated list, Cc/Bcc on demand, and a From picker that lists every identity of every account, grouped by account, so a draft can be sent from any mailbox.
 - **Identities & signatures**: multiple send-as aliases per account with their own name, Reply-To and signature. Replies automatically pick the identity the message was addressed to.
 - **Reply / forward** with proper quoting, `In-Reply-To` / `References` threading headers, reply-all de-duplication that drops your own addresses, and re-attached forwards.
 - **Attachments** via file picker, with size display; outgoing MIME built by nodemailer's `MailComposer`.
@@ -79,7 +79,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 
 ### Search
 
-Full-text search over subject, sender, recipients and downloaded bodies, powered by SQLite FTS5 with BM25 ranking and a recency boost. Trash and Junk are excluded unless you ask for them.
+Full-text search over subject, sender, recipients and downloaded bodies, powered by SQLite FTS5 with BM25 ranking and a recency boost. Results update live as you type. A search started inside a folder stays inside that folder, and clearing the box returns you to it. Trash and Junk are excluded unless you ask for them.
 
 ```text
 from:alice to:bob cc:carol subject:"quarterly report"

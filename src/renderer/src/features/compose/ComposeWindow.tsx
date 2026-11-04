@@ -31,7 +31,8 @@ function ComposeWindow({ c }: { c: ComposerState }) {
   const [error, setError] = useState<string | null>(null)
   const dirty = useRef(false)
   const editor = useComposeEditor(c.initialHtml)
-  const identities = useQuery({ queryKey: ['identities', c.accountId], queryFn: () => invoke('identities.list', { accountId: c.accountId }) })
+  // Every identity of every account: the From line can switch the sending account.
+  const identities = useQuery({ queryKey: ['identities'], queryFn: () => invoke('identities.list', {}) })
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
 
   const buildDraft = useCallback(
@@ -144,12 +145,29 @@ function ComposeWindow({ c }: { c: ComposerState }) {
       <div className="px-3">
         <div className="flex items-center gap-2 border-b border-border py-1 text-sm">
           <span className="w-10 text-xs text-muted">From</span>
-          <Select className="h-7 flex-1 border-0 bg-transparent px-0" value={c.identityId ?? ''} onChange={(e) => update(c.key, { identityId: e.target.value || null })}>
-            {identities.data?.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} &lt;{i.email}&gt;{account ? ` · ${account.displayName}` : ''}
-              </option>
-            ))}
+          <span className="size-2 shrink-0 rounded-full" style={{ background: account?.color ?? 'transparent' }} title={account?.displayName} />
+          <Select
+            className="h-7 flex-1 border-0 bg-transparent px-0"
+            value={c.identityId ?? ''}
+            onChange={(e) => {
+              const id = e.target.value
+              const identity = identities.data?.find((i) => i.id === id)
+              if (identity) update(c.key, { accountId: identity.accountId, identityId: identity.id })
+            }}
+          >
+            {(accounts.data ?? []).map((a) => {
+              const own = (identities.data ?? []).filter((i) => i.accountId === a.id)
+              if (!own.length) return null
+              return (
+                <optgroup key={a.id} label={`${a.displayName} · ${a.email}`}>
+                  {own.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name ? `${i.name} <${i.email}>` : i.email}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            })}
           </Select>
           {!c.showCc && (
             <button className="text-xs text-muted hover:text-fg" onClick={() => update(c.key, { showCc: true })}>

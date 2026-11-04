@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke, onEvent } from '@renderer/lib/api'
 import type { MailboxSelection } from '@renderer/store/ui'
 import type { ChannelInput } from '@shared/ipc'
@@ -36,14 +36,18 @@ export function useMessageList(sel: MailboxSelection) {
     [qc, sel]
   )
   const isSearch = sel.kind === 'search'
+  // A search started inside a folder stays inside that folder.
+  const scope = isSearch && sel.within?.kind === 'folder' ? { accountId: sel.within.accountId, folderId: sel.within.folderId } : {}
   return useInfiniteQuery({
-    queryKey: isSearch ? ['messages', 'search', sel.query] : key,
+    queryKey: isSearch ? ['messages', 'search', sel.query, scope] : key,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       isSearch
-        ? invoke('search.run', { query: sel.query, limit: PAGE, offset: pageParam ? Number(pageParam) : 0 })
+        ? invoke('search.run', { query: sel.query, ...scope, limit: PAGE, offset: pageParam ? Number(pageParam) : 0 })
         : invoke('messages.list', { ...base, before: pageParam, limit: PAGE }),
-    getNextPageParam: (last, pages) => (last.length < PAGE ? undefined : isSearch ? String(pages.length * PAGE) : last[last.length - 1]?.date)
+    getNextPageParam: (last, pages) => (last.length < PAGE ? undefined : isSearch ? String(pages.length * PAGE) : last[last.length - 1]?.date),
+    // Keep rows on screen while a refetch or the next keystroke's search is in flight.
+    placeholderData: keepPreviousData
   })
 }
 
