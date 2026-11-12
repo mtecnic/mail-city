@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Manual run from the Actions tab: builds and attaches the installer to a draft release
+  # for the version in package.json (also the way to re-run a failed release).
+  workflow_dispatch:
 
 permissions:
   contents: write
