@@ -45,9 +45,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm dist:dir
+      # Build the real installer and portable exe (never published from CI), so a ready-to-run
+      # download exists for every commit and installer packaging problems show up here.
+      - run: pnpm dist:win --publish never
       - uses: actions/upload-artifact@v4
         with:
-          name: mail-city-win-unpacked
-          path: release/win-unpacked
-          retention-days: 7
+          name: mail-city-windows-installer
+          path: |
+            release/*.exe
+            release/latest.yml
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14

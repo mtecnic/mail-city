@@ -223,7 +223,15 @@ Full details: [docs/MCP.md](docs/MCP.md).
 
 ## Getting started on Windows
 
-### Prerequisites (one time)
+### Install (recommended)
+
+Download `Mail City-Setup-<version>.exe` from the [Releases page](https://github.com/mtecnic/mail-city/releases) and run it. That is the only download: no Node.js, pnpm, Python or Visual Studio build tools are needed. A portable `.exe` is attached to each release too. The app checks for updates in the background and installs them when you quit, so there is nothing to re-download or rebuild later.
+
+Builds are unsigned, so Windows SmartScreen shows "unknown publisher" the first time: *More info → Run anyway*.
+
+The rest of this section is for building from source.
+
+### Prerequisites for building from source (one time)
 
 1. **Node.js 22 LTS** from <https://nodejs.org> (the project requires ≥ 22.12).
 2. **pnpm**: run `corepack enable` after installing Node; the repo pins `pnpm@10.28.0`. If `corepack` is missing or blocked, `npm i -g pnpm` works too.
