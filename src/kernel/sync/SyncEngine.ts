@@ -61,6 +61,16 @@ export class SyncEngine extends TypedEmitter<EngineEvents> {
     else this.ops.enqueue(accountId, op)
   }
 
+  /** The computer is going to sleep: drop every connection and park the syncers. */
+  suspendAll(): void {
+    for (const s of this.syncers.values()) s.pauseForSleep()
+  }
+
+  /** The computer woke up: reconnect every account from scratch. */
+  resumeAll(): void {
+    for (const s of this.syncers.values()) s.resumeFromSleep()
+  }
+
   syncNow(accountId?: string): void {
     for (const s of this.syncers.values()) if (!accountId || s.accountId === accountId) s.requestFullResync()
   }

@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events'
+import { createLogger } from './logger'
+
+const log = createLogger('emitter')
 
 /** Small typed wrapper over Node's EventEmitter. */
 export class TypedEmitter<Events extends Record<string, unknown[]>> {
@@ -22,6 +25,12 @@ export class TypedEmitter<Events extends Record<string, unknown[]>> {
   }
 
   emit<K extends keyof Events & string>(event: K, ...args: Events[K]): void {
+    // Node throws when an 'error' event has no listener. In an app that must survive flaky
+    // networks that turns a recoverable socket error into a crash dialog, so log it instead.
+    if (event === 'error' && this.ee.listenerCount('error') === 0) {
+      log.warn('unhandled error event ignored', { message: args[0] instanceof Error ? args[0].message : String(args[0]) })
+      return
+    }
     this.ee.emit(event, ...args)
   }
 

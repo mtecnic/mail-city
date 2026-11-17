@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Fix: error dialogs after the computer sleeps. Dead connections raised an unhandled event that Electron showed as a modal box, once per error and account. Connection errors are now handled, and a safety net logs anything unexpected instead of showing a dialog.
+- Sleep and resume: connections are dropped when the computer suspends and re-opened from scratch a few seconds after it wakes, instead of reusing dead sockets.
+- Network problems no longer mark an account with a red "sign-in failed" banner; only real errors (wrong password, re-authentication needed, server rejections) do.
+- Harden fire-and-forget work (rules on new mail, outbox delivery) so a failure is logged, never thrown.
+
 ## 1.0.0
 
 First release.

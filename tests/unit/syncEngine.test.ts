@@ -13,19 +13,20 @@ function setup() {
   inbox.add({ subject: 'Hello', from: 'b@x', date: new Date(Date.now() - 3600_000), body: 'hi there' })
   inbox.add({ subject: 'Re: Hello', from: 'c@x', date: new Date(), flags: ['\\Seen'] })
   const events: string[] = []
+  const accountErrors: (string | null)[] = []
   const syncer = new AccountSyncer(k.accounts.get(acct.id)!, {
     store: k.store,
     ops: k.sync.ops,
     getCredentials: async () => ({ user: 'u', pass: 'p' }),
     dataDir: '/tmp/mail-city-test',
     settings: () => ({ initialWindowDays: 90, pollIntervalMinutes: 5 }),
-    onAccountError: () => {},
+    onAccountError: (e) => accountErrors.push(e),
     createProvider: () => fake
   })
   syncer.on('newMessages', (_f, ids) => events.push(`new:${ids.length}`))
   syncer.on('headersStored', (_f, ids) => events.push(`stored:${ids.length}`))
   syncer['fullResyncRequested'] = true
-  return { k, acct, fake, inbox, syncer, events }
+  return { k, acct, fake, inbox, syncer, events, accountErrors }
 }
 
 describe('AccountSyncer with a fake IMAP server', () => {
@@ -179,5 +180,70 @@ describe('AccountSyncer with a fake IMAP server', () => {
     k.compose.discardDraft(draft.id)
     await s.syncer.tick()
     expect(s.fake.box('Drafts').messages.size).toBe(0)
+  })
+
+  it('survives connection errors from the provider (a sleeping laptop kills every socket)', async () => {
+    const s = setup()
+    k = s.k
+    // Before the fix nothing listened for 'error', so Node threw and Electron showed a dialog.
+    expect(() => s.fake.emit('error', new Error('read ECONNRESET'))).not.toThrow()
+    expect(() => s.fake.emit('error', new Error('Socket timeout'))).not.toThrow()
+    await s.syncer.tick()
+    expect(k.store.list({ folderId: k.store.folderBySpecialUse(s.acct.id, 'inbox')!.id })).toHaveLength(2)
+  })
+
+  it('drops connections when the computer sleeps and reconnects with a full resync on wake', async () => {
+    const s = setup()
+    k = s.k
+    await s.syncer.tick()
+    s.syncer.pauseForSleep()
+    expect(s.fake.ops).toContain('drop')
+    s.inbox.add({ subject: 'Arrived while asleep', from: 'z@x', date: new Date() })
+    s.syncer.resumeFromSleep()
+    await s.syncer.tick()
+    const inboxF = k.store.folderBySpecialUse(s.acct.id, 'inbox')!
+    expect(k.store.list({ folderId: inboxF.id }).map((m) => m.subject)).toContain('Arrived while asleep')
+    // Resuming when not asleep is a no-op.
+    const before = s.fake.ops.length
+    s.syncer.resumeFromSleep()
+    expect(s.fake.ops.length).toBe(before)
+  })
+
+  it('does not blame the account for network blips but still reports real failures', async () => {
+    const s = setup()
+    k = s.k
+    s.fake.connect = async () => {
+      throw new Error('connect ETIMEDOUT 10.0.0.1:993')
+    }
+    s.syncer.start()
+    await new Promise((r) => setTimeout(r, 150))
+    await s.syncer.stop()
+    expect(s.accountErrors.filter(Boolean)).toEqual([])
+
+    const t = setup()
+    t.fake.connect = async () => {
+      throw new Error('Invalid credentials')
+    }
+    t.syncer.start()
+    await new Promise((r) => setTimeout(r, 150))
+    await t.syncer.stop()
+    expect(t.accountErrors.filter(Boolean)).toEqual(['Invalid credentials'])
+    await t.k.shutdown()
+  })
+
+  it('stays parked while asleep: no connection attempts and no error reports', async () => {
+    const s = setup()
+    k = s.k
+    let attempts = 0
+    s.fake.connect = async () => {
+      attempts++
+      throw new Error('should not connect while asleep')
+    }
+    s.syncer.pauseForSleep()
+    s.syncer.start()
+    await new Promise((r) => setTimeout(r, 150))
+    expect(attempts).toBe(0)
+    expect(s.accountErrors).toEqual([])
+    await s.syncer.stop()
   })
 })
