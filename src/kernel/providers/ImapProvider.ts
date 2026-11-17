@@ -148,6 +148,22 @@ export class ImapProvider extends TypedEmitter<ProviderEvents> {
     }
   }
 
+  /**
+   * Abandon the connection immediately without a LOGOUT round trip. Used when the computer
+   * is going to sleep (or just woke up): the socket is dead or about to be, and waiting for
+   * the server would only produce timeouts.
+   */
+  dropConnection(): void {
+    const c = this.client
+    this.client = null
+    if (!c) return
+    try {
+      c.close()
+    } catch {
+      /* already closed */
+    }
+  }
+
   private async c(): Promise<ImapFlow> {
     await this.connect()
     if (!this.client) throw new Error('IMAP connection unavailable')

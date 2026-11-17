@@ -165,16 +165,22 @@ export class OutboxService extends TypedEmitter<OutboxEvents> {
   }
 
   private async pump(): Promise<void> {
-    const now = new Date().toISOString()
-    const due = this.db
-      .select()
-      .from(outbox)
-      .where(and(eq(outbox.status, 'queued'), or(isNull(outbox.scheduledAt), lte(outbox.scheduledAt, now))))
-      .all()
-    for (const row of due) {
-      if (this.sending.has(row.id)) continue
-      this.sending.add(row.id)
-      void this.deliver(row).finally(() => this.sending.delete(row.id))
+    try {
+      const now = new Date().toISOString()
+      const due = this.db
+        .select()
+        .from(outbox)
+        .where(and(eq(outbox.status, 'queued'), or(isNull(outbox.scheduledAt), lte(outbox.scheduledAt, now))))
+        .all()
+      for (const row of due) {
+        if (this.sending.has(row.id)) continue
+        this.sending.add(row.id)
+        void this.deliver(row)
+          .catch((e) => this.log.warn('delivery crashed', { id: row.id, error: String(e) }))
+          .finally(() => this.sending.delete(row.id))
+      }
+    } catch (e) {
+      this.log.warn('outbox pump failed', { error: String(e) })
     }
   }
 

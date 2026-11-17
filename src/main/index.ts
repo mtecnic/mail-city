@@ -1,10 +1,11 @@
-import { app, BrowserWindow, safeStorage, shell, powerMonitor } from 'electron'
+import { app, BrowserWindow, Notification, safeStorage, shell, powerMonitor } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Kernel } from '@kernel/index'
 import { setLogSink } from '@kernel/utils/logger'
+import { errorText, isTransientNetworkError } from '@kernel/utils/errors'
 import { createMainWindow } from './windows/main'
 import { registerIpc } from './ipc'
 import { emit } from './ipc/router'
@@ -29,6 +30,27 @@ setLogSink({
     else scoped[level](message, meta)
   }
 })
+
+// ---- safety net: never show Electron's modal "JavaScript error" box ------------
+// A laptop that sleeps kills every socket; the resulting errors are expected and the sync
+// loop recovers by itself. Anything else is logged with its stack and, at most once an hour,
+// surfaced as a quiet notification. Installed first so it also covers headless MCP mode.
+let lastErrorNotice = 0
+function handleStray(kind: 'uncaughtException' | 'unhandledRejection', e: unknown): void {
+  if (isTransientNetworkError(e)) {
+    log.info(`suppressed network error (${kind})`, errorText(e).slice(0, 300))
+    return
+  }
+  log.error(`${kind}:`, e instanceof Error ? (e.stack ?? e.message) : errorText(e))
+  if (Date.now() - lastErrorNotice > 3600_000 && app.isReady() && Notification.isSupported()) {
+    lastErrorNotice = Date.now()
+    new Notification({ title: 'Mail City', body: 'Something unexpected went wrong and Mail City kept running. Details are in the log folder (Settings, General).', silent: true }).show()
+  }
+}
+process.on('uncaughtException', (e) => handleStray('uncaughtException', e))
+process.on('unhandledRejection', (e) => handleStray('unhandledRejection', e))
+app.on('render-process-gone', (_e, _wc, details) => log.error('renderer process gone', details))
+app.on('child-process-gone', (_e, details) => log.error('child process gone', details))
 
 // ---- profile override (tests, portable installs) ---------------------------
 const userDataArg = process.argv.find((a) => a.startsWith('--user-data-dir='))
@@ -102,7 +124,24 @@ else if (!app.requestSingleInstanceLock()) {
     k.snooze.on('woke', badge)
     setTimeout(badge, 2000)
 
-    powerMonitor.on('resume', () => k.sync.syncNow())
+    // Sleep kills every socket. Drop connections before suspending and reconnect from scratch
+    // a few seconds after waking, once the network has had time to come back.
+    let resumeTimer: ReturnType<typeof setTimeout> | null = null
+    powerMonitor.on('suspend', () => {
+      if (resumeTimer) clearTimeout(resumeTimer)
+      resumeTimer = null
+      log.info('system suspending; pausing sync')
+      k.sync.suspendAll()
+    })
+    powerMonitor.on('resume', () => {
+      log.info('system resumed; reconnecting shortly')
+      if (resumeTimer) clearTimeout(resumeTimer)
+      resumeTimer = setTimeout(() => {
+        resumeTimer = null
+        k.sync.resumeAll()
+        k.sync.syncNow()
+      }, 4000)
+    })
     powerMonitor.on('unlock-screen', () => k.sync.syncNow())
 
     // mailto: on cold start (Windows passes it in argv).

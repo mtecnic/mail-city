@@ -280,6 +280,7 @@ The same file also works as a safety net before reinstalling Windows. Keep it wi
 | `pnpm dev` ends with `Error: Electron uninstall` | The Electron binary download was interrupted. Run `node node_modules\electron\install.js`, then `pnpm dev` |
 | App exits immediately with `NODE_MODULE_VERSION` in the error | Native module built for the wrong runtime: `pnpm rebuild` |
 | Google Workspace account says *Invalid credentials* | Use an App Password (needs 2-Step Verification) or OAuth with your own client ID, and confirm IMAP is enabled in the Google Admin console |
+| Error dialogs after the computer slept | Fixed in 1.0.1: connections are dropped on sleep and re-opened a few seconds after waking, and network blips no longer raise dialogs or red account banners. Update through the installer. Anything unexpected is written to the log (*Settings → General → Open log folder*) instead |
 | Blank window | Check the terminal; main-process logs are in `%APPDATA%\mail-city\logs\main.log` (also *Settings → General → Open log folder*) |
 
 Your accounts, cache and secrets live in `%APPDATA%\mail-city\data\`. Pulling a new version of the source and re-running never touches them; schema migrations run automatically on launch.

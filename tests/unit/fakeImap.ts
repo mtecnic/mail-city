@@ -55,6 +55,9 @@ export class FakeImapProvider extends ImapProvider {
     return this.open_ ? ({ path: this.open_.path } as never) : (false as const)
   }
   override async connect() {}
+  override dropConnection() {
+    this.ops.push('drop')
+  }
   override async disconnect() {}
   override async listFolders(): Promise<FolderInfo[]> {
     return [...this.mailboxes.values()].map((b) => ({ path: b.path, name: b.path, delimiter: '/', specialUse: b.specialUse, subscribed: true, flags: [] }))

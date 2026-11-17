@@ -11,6 +11,7 @@ import { newId } from '../utils/ids'
 import { createLogger, type Logger } from '../utils/logger'
 import { backoffDelay, sleep } from '../utils/retry'
 import { TypedEmitter } from '../utils/emitter'
+import { isTransientNetworkError } from '../utils/errors'
 import type { Credentials } from '../accounts/connectionTest'
 import type { ServerConfig } from '@shared/schemas/account'
 
@@ -54,6 +55,9 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   private loopPromise: Promise<void> | null = null
   private wake: (() => void) | null = null
   private failures = 0
+  /** True while the computer sleeps: no connections are opened and errors are not reported. */
+  private sleeping = false
+  private resumeWaiters: (() => void)[] = []
   private lastPoll = 0
   private folderSyncRequests = new Set<string>()
   private bodyRequests: { messageId: string; resolve: (ok: boolean) => void }[] = []
@@ -75,6 +79,45 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
     this.provider.on('expunge', (path) => this.onServerChange(path))
     this.provider.on('flags', (path) => this.onServerChange(path))
     this.provider.on('close', () => this.kick())
+    // Socket errors (timeouts, resets, a dead link after sleep) are expected and recoverable:
+    // the sync loop reconnects. Without a listener Node would throw and crash the main process.
+    this.provider.on('error', (err) => {
+      this.log.debug('connection error', { message: err.message })
+      this.kick()
+    })
+  }
+
+  /**
+   * The computer is going to sleep: drop the connection now instead of letting it rot, and
+   * stay parked (no reconnects, no error reports) until `resumeFromSleep`.
+   */
+  pauseForSleep(): void {
+    this.sleeping = true
+    this.provider.dropConnection()
+    this.kick()
+  }
+
+  /** The computer woke up: start from a fresh connection and a full resync. */
+  resumeFromSleep(): void {
+    if (!this.sleeping) return
+    this.sleeping = false
+    this.failures = 0
+    this.provider.dropConnection() // whatever survived the sleep is stale
+    this.fullResyncRequested = true
+    const waiters = this.resumeWaiters
+    this.resumeWaiters = []
+    waiters.forEach((w) => w())
+    this.kick()
+  }
+
+  /** Park the loop while asleep; resolves on resume or stop. */
+  private async parkWhileSleeping(): Promise<void> {
+    while (this.running && this.sleeping) {
+      await new Promise<void>((resolve) => {
+        this.resumeWaiters.push(resolve)
+        this.abort.signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+    }
   }
 
   get accountId() {
@@ -151,6 +194,8 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
   private async loop(): Promise<void> {
     while (this.running) {
       try {
+        await this.parkWhileSleeping()
+        if (!this.running) break
         await this.provider.connect()
         this.failures = 0
         this.deps.onAccountError(null)
@@ -158,11 +203,15 @@ export class AccountSyncer extends TypedEmitter<SyncerEvents> {
         this.setState('idle')
         await this.waitForWork()
       } catch (e) {
+        // Anything that fails while the machine is going to sleep (or just woke) is expected.
+        if (this.sleeping) continue
         const msg = e instanceof Error ? e.message : String(e)
+        const transient = isTransientNetworkError(e) || /offline/i.test(msg)
         this.failures++
-        this.log.warn('sync error', { msg, failures: this.failures })
-        this.setState(/ENOTFOUND|ECONN|ETIMEDOUT|offline|timed out/i.test(msg) ? 'offline' : 'error', msg)
-        this.deps.onAccountError(msg)
+        this.log.warn('sync error', { msg, failures: this.failures, transient })
+        this.setState(transient ? 'offline' : 'error', msg)
+        // A network blip is not an account problem: don't show a red "sign-in failed" banner for it.
+        if (!transient) this.deps.onAccountError(msg)
         if (/sign in again|REAUTH/i.test(msg)) {
           // Nothing we can do until the user re-authenticates; back off hard.
           await this.waitForWork(10 * 60_000)

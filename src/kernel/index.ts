@@ -175,7 +175,7 @@ export class Kernel {
     // Rules on genuinely new mail.
     this.sync.on('newMessages', (_accountId, folderId, ids) => {
       const folder = this.store.getFolder(folderId)
-      if (folder?.specialUse === 'inbox' || folder?.specialUse === null) void this.rules.run(ids)
+      if (folder?.specialUse === 'inbox' || folder?.specialUse === null) void this.rules.run(ids).catch((e) => this.log.warn('rules failed on new mail', { error: String(e) }))
     })
     // Rule action "forward": compose a forward and queue it.
     this.rules.setForwardHandler(async (msg, to) => {
