@@ -50,8 +50,9 @@ export class MessageService {
     return this.store.list(q)
   }
 
-  thread(threadId: string): MessageListItem[] {
-    return this.store.list({ threadId, limit: 500 })
+  /** A conversation with each email once; `preferId` keeps the copy the user opened. */
+  thread(threadId: string, preferId?: string): MessageListItem[] {
+    return this.store.threadMessages(threadId, preferId)
   }
 
   async get(id: string, opts: { fetchBody?: boolean } = {}): Promise<MessageDetail> {

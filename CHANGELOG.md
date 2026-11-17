@@ -6,6 +6,8 @@
 - Sleep and resume: connections are dropped when the computer suspends and re-opened from scratch a few seconds after it wakes, instead of reusing dead sockets.
 - Network problems no longer mark an account with a red "sign-in failed" banner; only real errors (wrong password, re-authentication needed, server rejections) do.
 - Harden fire-and-forget work (rules on new mail, outbox delivery) so a failure is logged, never thrown.
+- Fix: conversations showed the same email several times and list thread counts were roughly doubled. Gmail stores one email in several IMAP folders (INBOX, All Mail, labels); conversations, counts, search and Ask-my-mail now show each email once, keeping the copy you opened.
+- Fix: archiving a Gmail message when All Mail was already synced hit a database conflict and left a duplicate until the next sync.
 
 ## 1.0.0
 

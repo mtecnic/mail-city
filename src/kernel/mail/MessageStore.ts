@@ -12,6 +12,22 @@ import { listAttachments, hasRealAttachments } from './bodystructure'
 import { assignThread, normalizeSubject } from './threading'
 import { newId } from '../utils/ids'
 
+/**
+ * Which copy of an email to show when the same message is stored in several folders
+ * (Gmail keeps one message in INBOX, All Mail, Important and every label). Lower wins.
+ */
+const FOLDER_RANK: Record<string, number> = { inbox: 0, sent: 1, drafts: 2, archive: 4, flagged: 5, important: 6, all: 7, junk: 8, trash: 9 }
+const USER_FOLDER_RANK = 3
+export function folderRank(specialUse: string | null | undefined): number {
+  return specialUse ? (FOLDER_RANK[specialUse] ?? USER_FOLDER_RANK) : USER_FOLDER_RANK
+}
+/** The same ranking as SQL, for a folders table aliased as `alias`. */
+export function folderRankSql(alias: string): string {
+  return `CASE ${alias}.special_use ${Object.entries(FOLDER_RANK)
+    .map(([k, v]) => `WHEN '${k}' THEN ${v}`)
+    .join(' ')} ELSE ${USER_FOLDER_RANK} END`
+}
+
 export interface MessageListItem {
   id: string
   accountId: string
@@ -341,6 +357,13 @@ export class MessageStore {
 
   /** Move a cached message to another folder locally (uid may be unknown until the server tells us). */
   moveLocal(id: string, toFolderId: string, newUid: number | null): void {
+    // Gmail: archiving moves a message into All Mail, where the server may report the UID of a copy
+    // we already cached. Drop that twin so the moved row (with its body and AI data) takes its place
+    // instead of tripping the unique index and leaving a duplicate behind.
+    if (newUid !== null) {
+      const clash = this.db.select({ id: messages.id }).from(messages).where(and(eq(messages.folderId, toFolderId), eq(messages.uid, newUid))).get()
+      if (clash && clash.id !== id) this.deleteByIds([clash.id])
+    }
     // Negative placeholder UIDs keep the unique index happy until the next sync assigns the real one.
     const uid = newUid ?? -Math.floor(Math.random() * 1e9) - 1
     this.db.update(messages).set({ folderId: toFolderId, uid }).where(eq(messages.id, id)).run()
@@ -373,6 +396,55 @@ export class MessageStore {
   }
 
   // ---- list queries -------------------------------------------------------
+
+  /**
+   * One row per email: copies of the same RFC Message-ID within an account collapse to the
+   * folder-preferred one, or to `preferId` when it is among them. Input order is kept.
+   */
+  collapseCopies(rows: MessageRow[], preferId?: string): MessageRow[] {
+    const ranks = new Map<string, number>()
+    const rankOf = (r: MessageRow) => {
+      if (r.id === preferId) return -1
+      let v = ranks.get(r.folderId)
+      if (v === undefined) {
+        v = folderRank(this.getFolder(r.folderId)?.specialUse)
+        ranks.set(r.folderId, v)
+      }
+      return v
+    }
+    const best = new Map<string, MessageRow>()
+    for (const r of rows) {
+      const key = r.messageId ? `${r.accountId}\u0000${r.messageId}` : `id\u0000${r.id}`
+      const cur = best.get(key)
+      if (!cur || rankOf(r) < rankOf(cur)) best.set(key, r)
+    }
+    const keep = new Set([...best.values()].map((r) => r.id))
+    return rows.filter((r) => keep.has(r.id))
+  }
+
+  /** Drop later copies of an email from a ranked id list (first occurrence wins). */
+  collapseDuplicateIds(ids: string[]): string[] {
+    if (!ids.length) return []
+    const rows = this.db.select({ id: messages.id, accountId: messages.accountId, messageId: messages.messageId }).from(messages).where(inArray(messages.id, ids)).all()
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const id of ids) {
+      const r = byId.get(id)
+      if (!r) continue
+      const key = r.messageId ? `${r.accountId}\u0000${r.messageId}` : `id\u0000${r.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(id)
+    }
+    return out
+  }
+
+  /** Every email of a conversation, oldest first, each shown once (see `collapseCopies`). */
+  threadMessages(threadId: string, preferId?: string): MessageListItem[] {
+    const rows = this.db.select().from(messages).where(eq(messages.threadId, threadId)).orderBy(messages.date).limit(500).all()
+    return this.decorate(this.collapseCopies(rows, preferId))
+  }
 
   list(q: ListMessagesQuery): MessageListItem[] {
     const limit = Math.min(q.limit ?? 50, 500)
@@ -412,7 +484,12 @@ export class MessageStore {
     const counts = new Map<string, { n: number; unread: number }>()
     if (threadIds.length) {
       for (const r of this.db
-        .select({ t: messages.threadId, n: sql<number>`count(*)`, unread: sql<number>`sum(case when json_extract(${messages.flags}, '$.seen') = 0 then 1 else 0 end)` })
+        // Count emails, not stored copies: Gmail keeps one message in several folders.
+        .select({
+          t: messages.threadId,
+          n: sql<number>`count(distinct coalesce(${messages.messageId}, ${messages.id}))`,
+          unread: sql<number>`count(distinct case when json_extract(${messages.flags}, '$.seen') = 0 then coalesce(${messages.messageId}, ${messages.id}) end)`
+        })
         .from(messages)
         .where(inArray(messages.threadId, threadIds))
         .groupBy(messages.threadId)

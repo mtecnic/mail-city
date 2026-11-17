@@ -20,7 +20,7 @@ export function ReadingPane({ onCompose }: { onCompose?: (mode: 'reply' | 'reply
   const actions = useMailActions()
   const m = q.data
   // Hooks must run on every render path: the thread query is keyed on the loaded message.
-  const thread = useThread(m?.threadId)
+  const thread = useThread(m?.threadId, m?.id)
 
   if (selectedIds.length > 1) {
     return (

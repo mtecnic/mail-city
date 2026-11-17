@@ -235,7 +235,7 @@ export class EmbeddingIndexer extends TypedEmitter<{ progress: [IndexStatus] }> 
     } catch (e) {
       log.debug('semantic search unavailable', { error: String(e) })
     }
-    const ids = rrf([fts, sem]).slice(0, limit)
+    const ids = this.store.collapseDuplicateIds(rrf([fts, sem])).slice(0, limit)
     return this.store.listByIds(ids)
   }
 

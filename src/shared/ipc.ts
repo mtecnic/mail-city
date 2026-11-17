@@ -159,7 +159,7 @@ export const channels = {
   'messages.saveSource': defineChannel(z.object({ id: z.string() }), z.object({ ok: z.boolean(), path: z.string().optional() })),
 
   'messages.list': defineChannel(ListMessagesQuerySchema, z.array(MessageListItemSchema)),
-  'messages.thread': defineChannel(z.object({ threadId: z.string() }), z.array(MessageListItemSchema)),
+  'messages.thread': defineChannel(z.object({ threadId: z.string(), preferId: z.string().optional() }), z.array(MessageListItemSchema)),
   'messages.get': defineChannel(z.object({ id: z.string(), fetchBody: z.boolean().optional() }), MessageDetailSchema),
   'messages.setFlags': defineChannel(z.object({ ids: z.array(z.string()).min(1), flags: MessageFlagsSchema.partial() }), z.void()),
   'messages.move': defineChannel(z.object({ ids: z.array(z.string()).min(1), toFolderId: z.string() }), z.void()),

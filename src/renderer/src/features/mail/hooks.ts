@@ -58,13 +58,14 @@ export function useMessage(id: string | null, enabled = true) {
 }
 
 /** Every message of a conversation, oldest first. */
-export function useThread(threadId: string | null | undefined) {
+export function useThread(threadId: string | null | undefined, preferId?: string | null) {
   const qc = useQueryClient()
   useEffect(() => onEvent('messages.changed', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
   useEffect(() => onEvent('messages.bodyFetched', () => qc.invalidateQueries({ queryKey: ['thread'] })), [qc])
   return useQuery({
-    queryKey: ['thread', threadId],
-    queryFn: async () => (await invoke('messages.thread', { threadId: threadId! })).slice().sort((a, b) => a.date.localeCompare(b.date)),
+    queryKey: ['thread', threadId, preferId ?? null],
+    // `preferId` keeps the copy the user opened when one email is stored in several folders.
+    queryFn: async () => (await invoke('messages.thread', { threadId: threadId!, preferId: preferId ?? undefined })).slice().sort((a, b) => a.date.localeCompare(b.date)),
     enabled: !!threadId
   })
 }
