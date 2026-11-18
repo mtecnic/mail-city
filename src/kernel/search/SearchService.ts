@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import type { MessageStore, MessageListItem } from '../mail/MessageStore'
+import { folderRankSql, type MessageStore, type MessageListItem } from '../mail/MessageStore'
 import type { AccountStore } from '../accounts/AccountStore'
 import { parseQuery, type ParsedQuery } from './query'
 
@@ -71,6 +71,11 @@ export class SearchService {
         where.push(`m.folder_id NOT IN (${excluded.map(() => '?').join(',')})`)
         params.push(...excluded)
       }
+    }
+    // Outside a single folder, show each email once even when it is stored in several folders
+    // (Gmail's INBOX + All Mail + labels). Done in SQL so paging still returns full pages.
+    if (!opts.folderId && !q.folderName) {
+      where.push(`(m.message_id IS NULL OR m.id = (SELECT m2.id FROM messages m2 JOIN folders f2 ON f2.id = m2.folder_id WHERE m2.account_id = m.account_id AND m2.message_id = m.message_id ORDER BY ${folderRankSql('f2')}, m2.id LIMIT 1))`)
     }
     if (q.hasAttachment) where.push('m.has_attachments = 1')
     if (q.unread === true) where.push("json_extract(m.flags_json, '$.seen') = 0")

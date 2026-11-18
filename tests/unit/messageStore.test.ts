@@ -92,4 +92,33 @@ describe('MessageStore', () => {
     expect(k.sync.ops.pendingCount(accountId)).toBe(2)
     expect(k.sync.ops.next(accountId)!.kind).toBe('setFlags')
   })
+
+  it('shows each email once in a conversation when Gmail stores it in several folders', () => {
+    const allMail = k.store.upsertFolder({ id: 'fld_all', accountId, path: '[Gmail]/All Mail', name: 'All Mail', delimiter: '/', specialUse: 'all', subscribed: true, sortOrder: 5 }).id
+    const sent = k.store.upsertFolder({ id: 'fld_sent', accountId, path: '[Gmail]/Sent Mail', name: 'Sent Mail', delimiter: '/', specialUse: 'sent', subscribed: true, sortOrder: 2 }).id
+    const gm = { threadId: '777' }
+    // The original: in INBOX and All Mail. The reply: in Sent and All Mail.
+    const aInbox = k.store.upsertHeader(accountId, inboxId, header(1, { ...gm, envelope: { messageId: '<a@x>' } }))
+    const aAll = k.store.upsertHeader(accountId, allMail, header(50, { ...gm, envelope: { messageId: '<a@x>' } }))
+    const bSent = k.store.upsertHeader(accountId, sent, header(3, { ...gm, flags: new Set(['\\Seen']), envelope: { messageId: '<b@x>', subject: 'Re: Hello', date: new Date('2026-01-02T00:00:00Z') } }))
+    k.store.upsertHeader(accountId, allMail, header(51, { ...gm, flags: new Set(['\\Seen']), envelope: { messageId: '<b@x>', subject: 'Re: Hello', date: new Date('2026-01-02T00:00:00Z') } }))
+
+    expect(k.mail.thread('gm:777').map((m) => m.id)).toEqual([aInbox.id, bSent.id])
+    // The copy the user opened always wins its group.
+    expect(k.mail.thread('gm:777', aAll.id).map((m) => m.id)).toEqual([aAll.id, bSent.id])
+    // Counts are emails, not stored copies.
+    const row = k.store.list({ folderId: inboxId })[0]!
+    expect(row.threadCount).toBe(2)
+    expect(row.threadUnread).toBe(1)
+  })
+
+  it('archiving into a folder that already holds the copy replaces it instead of colliding', () => {
+    const allMail = k.store.upsertFolder({ id: 'fld_all', accountId, path: '[Gmail]/All Mail', name: 'All Mail', delimiter: '/', specialUse: 'all', subscribed: true, sortOrder: 5 }).id
+    const moved = k.store.upsertHeader(accountId, inboxId, header(9, { envelope: { messageId: '<c@x>' } }))
+    k.store.upsertHeader(accountId, allMail, header(60, { envelope: { messageId: '<c@x>' } }))
+    expect(() => k.store.moveLocal(moved.id, allMail, 60)).not.toThrow()
+    const copies = k.store.list({ folderId: allMail })
+    expect(copies.map((m) => m.id)).toEqual([moved.id])
+    expect(k.store.getMessage(moved.id)!.uid).toBe(60)
+  })
 })

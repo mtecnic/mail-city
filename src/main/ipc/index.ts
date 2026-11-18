@@ -90,7 +90,7 @@ export function registerIpc(kernel: Kernel): void {
   })
 
   handle('messages.list', (q) => kernel.mail.list(q))
-  handle('messages.thread', ({ threadId }) => kernel.mail.thread(threadId))
+  handle('messages.thread', ({ threadId, preferId }) => kernel.mail.thread(threadId, preferId))
   handle('messages.get', ({ id, fetchBody }) => kernel.mail.get(id, { fetchBody }))
   handle('messages.setFlags', ({ ids, flags }) => kernel.mail.setFlags(ids, flags))
   handle('messages.move', ({ ids, toFolderId }) => kernel.mail.move(ids, toFolderId))

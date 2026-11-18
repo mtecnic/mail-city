@@ -30,4 +30,17 @@ describe('SearchService (FTS5)', () => {
     expect(k.search.search('invoice in:trash').map((m) => m.uid)).toEqual([3])
     expect(k.search.search('is:unread').length).toBe(2)
   })
+
+  it('returns each email once across folders, but keeps folder-scoped results', () => {
+    k = new Kernel({ dataDir: '/tmp', dbPath: ':memory:', cipher: plainCipher, autoSync: false })
+    const acct = k.accounts.create({ type: 'gmail', email: 'me@test', displayName: 'Me', imap: { host: 'x', port: 993, tls: 'tls' }, smtp: { host: 'x', port: 587, tls: 'starttls' }, auth: { type: 'password', password: 'p' } })
+    const inbox = k.store.upsertFolder({ id: 'f1', accountId: acct.id, path: 'INBOX', name: 'Inbox', delimiter: '/', specialUse: 'inbox', subscribed: true, sortOrder: 0 })
+    const all = k.store.upsertFolder({ id: 'f3', accountId: acct.id, path: '[Gmail]/All Mail', name: 'All Mail', delimiter: '/', specialUse: 'all', subscribed: true, sortOrder: 5 })
+    const same = { envelope: { subject: 'Invoice 7', messageId: '<inv7@t>', from: [{ name: 'billing', address: 'billing@acme.test' }], to: [{ address: 'me@test' }], date: new Date('2026-03-01T10:00:00Z') } }
+    const inInbox = k.store.upsertHeader(acct.id, inbox.id, header(1, 'Invoice 7', 'billing@acme.test', '2026-03-01T10:00:00Z', same))
+    const inAll = k.store.upsertHeader(acct.id, all.id, header(40, 'Invoice 7', 'billing@acme.test', '2026-03-01T10:00:00Z', same))
+    expect(k.search.search('invoice').map((m) => m.id)).toEqual([inInbox.id])
+    expect(k.search.search('invoice in:all').map((m) => m.id)).toEqual([inAll.id])
+    expect(k.search.search('invoice', { folderId: all.id }).map((m) => m.id)).toEqual([inAll.id])
+  })
 })
