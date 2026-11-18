@@ -36,6 +36,10 @@ export function AppEvents() {
     const offs = [
       onEvent('app.mailto', (req) => void openMailto(req)),
       onEvent('app.compose', () => void newMessage()),
+      onEvent('app.search', (e) => {
+        setSettingsOpen(false)
+        setMailbox({ kind: 'search', query: e.query, within: null })
+      }),
       onEvent('app.openSettings', () => setSettingsOpen(true)),
       onEvent('app.openMessage', (e) => {
         setSettingsOpen(false)

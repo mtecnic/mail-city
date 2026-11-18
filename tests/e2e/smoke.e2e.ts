@@ -72,4 +72,32 @@ describe('Mail City smoke', () => {
     const version = await page.evaluate(() => (window as unknown as { mail: { invoke: (c: string) => Promise<{ version: string }> } }).mail.invoke('app.version'))
     expect(version.version).toMatch(/^\d+\.\d+\.\d+/)
   })
+
+  it('resizes the sidebar by dragging its edge and remembers the width after a reload', async () => {
+    const aside = page.locator('aside').first()
+    const before = await aside.evaluate((el) => (el as HTMLElement).offsetWidth)
+    const handle = page.getByRole('separator', { name: 'Sidebar width' })
+    const box = (await handle.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 80)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + 80, { steps: 5 })
+    await page.mouse.up()
+    const after = await aside.evaluate((el) => (el as HTMLElement).offsetWidth)
+    expect(after).toBeGreaterThan(before + 60)
+    await page.reload()
+    await expect.poll(() => page.locator('text=Welcome to Mail City').count(), { timeout: 20_000 }).toBeGreaterThan(0)
+    expect(await page.locator('aside').first().evaluate((el) => (el as HTMLElement).offsetWidth)).toBe(after)
+  })
+
+  it('opens the shortcut sheet with ? and closes dialogs with Escape', async () => {
+    await page.locator('body').click({ position: { x: 600, y: 10 } })
+    await page.keyboard.press('?')
+    await expect.poll(() => page.getByRole('dialog', { name: 'Keyboard shortcuts' }).count()).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
+    await page.getByRole('button', { name: 'Add your first account' }).click()
+    await expect.poll(() => page.getByRole('dialog', { name: 'Add account' }).count()).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('dialog').count()).toBe(0)
+  })
 })

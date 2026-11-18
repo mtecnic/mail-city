@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, Play, Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, Field, Input, Select, Alert } from '@renderer/components/ui'
 import type { Rule, RuleAction, RuleCondition, RuleInput } from '@shared/schemas/rules'
 import { NlRuleInput } from '@renderer/features/ai/NlRuleInput'
+import { useUi } from '@renderer/store/ui'
 
 const FIELDS: [RuleCondition['field'], string][] = [
   ['from', 'From'],
@@ -51,6 +52,14 @@ export function RulesSettings() {
   const accounts = useQuery({ queryKey: ['accounts.list'], queryFn: () => invoke('accounts.list') })
   const [editing, setEditing] = useState<RuleInput | null>(null)
   const [applyResult, setApplyResult] = useState<string | null>(null)
+  // "Filter messages like this…" from a message menu hands a prefilled rule over.
+  useEffect(() => {
+    const draft = useUi.getState().ruleDraft
+    if (draft) {
+      setEditing(draft)
+      useUi.getState().setRuleDraft(null)
+    }
+  }, [])
   const refresh = () => qc.invalidateQueries({ queryKey: ['rules'] })
   const save = useMutation({ mutationFn: (r: RuleInput) => invoke('rules.save', r), onSuccess: () => { void refresh(); setEditing(null) } })
   const remove = useMutation({ mutationFn: (id: string) => invoke('rules.remove', { id }), onSuccess: refresh })

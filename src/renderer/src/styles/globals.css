@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* Settings → General → Density: compact */
+@custom-variant compact (&:where([data-density='compact'], [data-density='compact'] *));
 
 @theme {
   --color-bg: #ffffff;
@@ -84,4 +86,31 @@ body,
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* Small entrance animations for dialogs, menus and toasts. */
+@keyframes mc-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mc-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.animate-fade {
+  animation: mc-fade 120ms ease-out;
+}
+.animate-pop,
+.animate-in {
+  animation: mc-pop 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade,
+  .animate-pop,
+  .animate-in {
+    animation: none;
+  }
 }

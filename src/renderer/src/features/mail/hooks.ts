@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { invoke, onEvent } from '@renderer/lib/api'
 import type { MailboxSelection } from '@renderer/store/ui'
 import type { ChannelInput } from '@shared/ipc'
-import type { MessageFlags } from '@shared/schemas/mail'
+import type { Folder, MessageFlags, MessageListItem } from '@shared/schemas/mail'
+import { toast } from '@renderer/components/toast'
+import { confirmDialog } from '@renderer/components/dialogs'
 
 export function useFolders() {
   const qc = useQueryClient()
@@ -70,6 +72,25 @@ export function useThread(threadId: string | null | undefined, preferId?: string
   })
 }
 
+/** Where each message lives right now, read from whatever the UI already has cached. */
+export function folderOfCached(qc: QueryClient, ids: string[]): Map<string, string> {
+  const want = new Set(ids)
+  const out = new Map<string, string>()
+  const take = (m: { id?: string; folderId?: string } | null | undefined) => {
+    if (m?.id && m.folderId && want.has(m.id) && !out.has(m.id)) out.set(m.id, m.folderId)
+  }
+  for (const [, data] of qc.getQueriesData<unknown>({ queryKey: ['message'] })) take(data as never)
+  for (const [, data] of qc.getQueriesData<unknown>({ queryKey: ['thread'] })) for (const m of (data as MessageListItem[] | undefined) ?? []) take(m)
+  for (const [, data] of qc.getQueriesData<unknown>({ queryKey: ['messages'] })) {
+    const pages = (data as { pages?: MessageListItem[][] } | undefined)?.pages ?? []
+    for (const p of pages) for (const m of p) take(m)
+  }
+  return out
+}
+
+class Cancelled extends Error {}
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
+
 export function useMailActions() {
   const qc = useQueryClient()
   const refresh = () => {
@@ -78,10 +99,73 @@ export function useMailActions() {
     void qc.invalidateQueries({ queryKey: ['thread'] })
     void qc.invalidateQueries({ queryKey: ['message'] })
   }
-  const setFlags = useMutation({ mutationFn: (v: { ids: string[]; flags: Partial<MessageFlags> }) => invoke('messages.setFlags', v), onSettled: refresh })
-  const archive = useMutation({ mutationFn: (ids: string[]) => invoke('messages.archive', { ids }), onSettled: refresh })
-  const del = useMutation({ mutationFn: (ids: string[]) => invoke('messages.delete', { ids }), onSettled: refresh })
-  const move = useMutation({ mutationFn: (v: { ids: string[]; toFolderId: string }) => invoke('messages.move', v), onSettled: refresh })
-  const junk = useMutation({ mutationFn: (v: { ids: string[]; junk: boolean }) => invoke('messages.junk', v), onSettled: refresh })
+  const folderList = () => qc.getQueryData<Folder[]>(['folders']) ?? []
+  const folderName = (id: string) => folderList().find((f) => f.id === id)?.name ?? 'folder'
+  const fail = (e: unknown) => {
+    if (e instanceof Cancelled) return
+    toast({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
+  }
+  /** Undo = move each message back to the folder it came from. */
+  const undoable = (text: string, before: Map<string, string>) => {
+    const groups = new Map<string, string[]>()
+    for (const [id, f] of before) groups.set(f, [...(groups.get(f) ?? []), id])
+    toast({
+      text,
+      action: groups.size
+        ? {
+            label: 'Undo',
+            run: () =>
+              void Promise.all([...groups].map(([toFolderId, ids]) => invoke('messages.move', { ids, toFolderId })))
+                .then(() => toast({ kind: 'success', text: 'Undone' }))
+                .catch(fail)
+                .finally(refresh)
+          }
+        : undefined
+    })
+  }
+
+  const setFlags = useMutation({ mutationFn: (v: { ids: string[]; flags: Partial<MessageFlags> }) => invoke('messages.setFlags', v), onError: fail, onSettled: refresh })
+  const archive = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const before = folderOfCached(qc, ids)
+      await invoke('messages.archive', { ids })
+      return before
+    },
+    onSuccess: (before, ids) => undoable(`Archived ${plural(ids.length, 'message')}`, before),
+    onError: fail,
+    onSettled: refresh
+  })
+  const del = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const before = folderOfCached(qc, ids)
+      const permanent = ids.length > 0 && ids.every((id) => ['trash', 'junk'].includes(folderList().find((f) => f.id === before.get(id))?.specialUse ?? ''))
+      if (permanent && !(await confirmDialog({ title: `Delete ${plural(ids.length, 'message')} forever?`, message: 'They are already in Trash or Junk. This cannot be undone.', okLabel: 'Delete forever', danger: true }))) throw new Cancelled()
+      await invoke('messages.delete', { ids })
+      return { before, permanent }
+    },
+    onSuccess: (r, ids) => (r.permanent ? toast({ text: `Deleted ${plural(ids.length, 'message')} forever` }) : undoable(`Moved ${plural(ids.length, 'message')} to Trash`, r.before)),
+    onError: fail,
+    onSettled: refresh
+  })
+  const move = useMutation({
+    mutationFn: async (v: { ids: string[]; toFolderId: string }) => {
+      const before = folderOfCached(qc, v.ids)
+      await invoke('messages.move', v)
+      return before
+    },
+    onSuccess: (before, v) => undoable(`Moved ${plural(v.ids.length, 'message')} to ${folderName(v.toFolderId)}`, before),
+    onError: fail,
+    onSettled: refresh
+  })
+  const junk = useMutation({
+    mutationFn: async (v: { ids: string[]; junk: boolean }) => {
+      const before = folderOfCached(qc, v.ids)
+      await invoke('messages.junk', v)
+      return before
+    },
+    onSuccess: (before, v) => undoable(v.junk ? `Marked ${plural(v.ids.length, 'message')} as junk` : `Moved ${plural(v.ids.length, 'message')} to Inbox`, before),
+    onError: fail,
+    onSettled: refresh
+  })
   return { setFlags, archive, del, move, junk }
 }

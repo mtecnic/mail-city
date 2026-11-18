@@ -10,7 +10,7 @@ import type { ChannelOutput } from '@shared/ipc'
 type Session = NonNullable<ChannelOutput<'agent.session.get'>>
 type Ev = Session['transcript'][number]
 
-export function AssistantPanel({ onClose }: { onClose: () => void }) {
+export function AssistantPanel({ onClose, width }: { onClose: () => void; width?: number }) {
   const qc = useQueryClient()
   const ai = useAiSettings()
   const { selectedMessageId, mailbox, selectMessage, setMailbox } = useUi()
@@ -104,7 +104,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-border bg-panel">
+    <aside className="flex shrink-0 flex-col border-l border-border bg-panel" style={{ width: width ?? 380 }}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm">
         <Bot className="size-4 text-accent" />
         <span className="font-semibold">Assistant</span>

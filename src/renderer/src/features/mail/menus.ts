@@ -21,6 +21,10 @@ export interface MessageMenuDeps {
   snooze: (ids: string[], until: Date) => void
   viewSource: (id: string) => void
   open: (id: string) => void
+  /** Run a mail search (e.g. everything from this sender). */
+  search: (query: string) => void
+  /** Open the rule editor prefilled from this message. */
+  filterLike: (m: MessageListItem) => void
 }
 
 export function snoozePresets(): [string, Date][] {
@@ -64,6 +68,11 @@ export function messageMenu(selected: MessageListItem[], deps: MessageMenuDeps):
     { type: 'separator' },
     ...(one
       ? [
+          { label: `Search mail from ${one.from.name || one.from.address}`, onSelect: () => deps.search(`from:${one.from.address}`) },
+          { label: 'Filter messages like this…', onSelect: () => deps.filterLike(one) },
+          { type: 'separator' as const },
+          { label: 'Copy sender address', onSelect: () => void navigator.clipboard.writeText(one.from.address) },
+          { label: 'Copy subject', onSelect: () => void navigator.clipboard.writeText(one.subject) },
           { label: 'Copy link', onSelect: () => void navigator.clipboard.writeText(`mail://msg/${one.id}`) },
           { label: 'View source…', onSelect: () => deps.viewSource(one.id) },
           { type: 'separator' as const }

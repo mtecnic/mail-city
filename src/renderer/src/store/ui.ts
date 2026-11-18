@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import type { RuleInput } from '@shared/schemas/rules'
+
+export type SettingsSection = 'accounts' | 'ai' | 'mcp' | 'identities' | 'rules' | 'contacts' | 'general'
 
 export type MailboxSelection =
   | { kind: 'unified'; specialUse: 'inbox' | 'flagged' | 'sent' | 'drafts' | 'focused' }
@@ -25,6 +28,12 @@ interface UiState {
   toggleSelected(id: string): void
   clearSelection(): void
   setSettingsOpen(open: boolean): void
+  /** Which settings section to show when settings open. */
+  settingsSection: SettingsSection | null
+  openSettings(section?: SettingsSection): void
+  /** A rule to open in the Rules editor ("Filter messages like this…"). */
+  ruleDraft: RuleInput | null
+  setRuleDraft(r: RuleInput | null): void
   /** Bumped by the Enter shortcut; the conversation view toggles the focused message. */
   cardToggle: number
   toggleCard(): void
@@ -60,7 +69,11 @@ export const useUi = create<UiState>((set) => ({
       return { selectedIds: next, selectedMessageId: has && s.selectedMessageId === id ? null : s.selectedMessageId }
     }),
   clearSelection: () => set({ selectedMessageId: null, selectedIds: [] }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) => set(settingsOpen ? { settingsOpen } : { settingsOpen, settingsSection: null }),
+  settingsSection: null,
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? null }),
+  ruleDraft: null,
+  setRuleDraft: (ruleDraft) => set({ ruleDraft }),
   cardToggle: 0,
   toggleCard: () => set((s) => ({ cardToggle: s.cardToggle + 1 }))
 }))

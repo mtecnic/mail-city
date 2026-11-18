@@ -21,6 +21,8 @@ import { messageMenu } from './menus'
 import { useContextMenu } from '@renderer/components/ContextMenu'
 import { useQuery } from '@tanstack/react-query'
 import { invoke } from '@renderer/lib/api'
+import { ResizeHandle } from '@renderer/components/ResizeHandle'
+import { useLayout, PANE_LIMITS } from '@renderer/store/layout'
 
 export function MailView({ onSettings }: { onSettings: () => void }) {
   const [adding, setAdding] = useState(false)
@@ -35,6 +37,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   const list = useMessageList(mailbox)
   const compose = useComposeActions()
   const folders = useFolders()
+  const layout = useLayout()
 
   const title = (() => {
     if (mailbox.kind === 'unified') return { inbox: 'All inboxes', focused: 'Focused', flagged: 'Starred', sent: 'All sent', drafts: 'All drafts' }[mailbox.specialUse]
@@ -52,12 +55,19 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        useLayout.getState().toggleSidebar()
+        return
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault()
         setAssistant((a) => !a)
         return
       }
       if (target.closest('input, textarea, select, [contenteditable="true"], .ProseMirror, [data-ctx-menu]') || e.ctrlKey || e.metaKey || e.altKey) return
+      // Never act on the selected messages while a dialog or menu is on screen.
+      if (document.querySelector('[role="dialog"], [data-ctx-menu]')) return
       if (e.key === 'c') {
         e.preventDefault()
         void compose.newMessage()
@@ -133,6 +143,7 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
       <UpdateBanner />
       <div className="flex min-h-0 flex-1">
       <Sidebar onAddAccount={() => setAdding(true)} onSettings={onSettings} onAssistant={() => setAssistant((a) => !a)} />
+      {!layout.sidebarCollapsed && <ResizeHandle label="Sidebar width" value={layout.sidebar} min={PANE_LIMITS.sidebar[0]} max={PANE_LIMITS.sidebar[1]} onChange={(w) => layout.setWidth('sidebar', w)} onReset={() => layout.reset('sidebar')} />}
       {accounts.data?.length === 0 ? (
         <Welcome onAddAccount={() => setAdding(true)} onRestore={() => setRestoring(true)} />
       ) : mailbox.kind === 'outbox' ? (
@@ -142,18 +153,24 @@ export function MailView({ onSettings }: { onSettings: () => void }) {
         </section>
       ) : (
         <>
-          <section className="flex w-[380px] shrink-0 flex-col border-r border-border">
+          <section className="flex shrink-0 flex-col border-r border-border" style={{ width: layout.list }}>
             <SearchBar />
             <header className="flex h-8 items-center border-b border-border px-3 text-xs font-semibold text-muted">{title}</header>
             {mailbox.kind === 'search' && <AskMailCard key={mailbox.query} question={mailbox.query} />}
             <MessageList />
           </section>
+          <ResizeHandle label="Message list width" value={layout.list} min={PANE_LIMITS.list[0]} max={PANE_LIMITS.list[1]} onChange={(w) => layout.setWidth('list', w)} onReset={() => layout.reset('list')} />
           <section className="flex min-w-0 flex-1 flex-col">
             <ReadingPane onCompose={(mode, m) => void compose.reply(m.id, mode)} />
           </section>
         </>
       )}
-      {assistant && <AssistantPanel onClose={() => setAssistant(false)} />}
+      {assistant && (
+        <>
+          <ResizeHandle label="Assistant width" grow="left" value={layout.assistant} min={PANE_LIMITS.assistant[0]} max={PANE_LIMITS.assistant[1]} onChange={(w) => layout.setWidth('assistant', w)} onReset={() => layout.reset('assistant')} />
+          <AssistantPanel width={layout.assistant} onClose={() => setAssistant(false)} />
+        </>
+      )}
       </div>
       <AddAccountDialog open={adding} onClose={() => setAdding(false)} />
       <RestoreBackupDialog open={restoring} onClose={() => setRestoring(false)} />

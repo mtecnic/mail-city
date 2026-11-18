@@ -9,7 +9,7 @@
     "src/shared/**/*",
     "tests/**/*"
   ],
-  "exclude": ["tests/unit/sanitize.test.ts"],
+  "exclude": ["tests/unit/sanitize.test.ts", "tests/unit/layout.test.ts", "tests/unit/undoBookkeeping.test.ts"],
   "compilerOptions": {
     "composite": true,
     "strict": true,

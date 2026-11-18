@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { mkdir, copyFile } from 'node:fs/promises'
+import { mkdir, copyFile, stat } from 'node:fs/promises'
+import { basename } from 'node:path'
 import type { MessageService } from './MessageService'
 import type { IdentityStore } from './IdentityStore'
 import type { DraftStore } from './DraftStore'
@@ -48,6 +49,25 @@ export class ComposeService {
     const dest = join(dir, filename.replace(/[\\/:*?"<>|]/g, '_'))
     await copyFile(path, dest)
     return { path: dest, filename, size, mimeType }
+  }
+
+  /**
+   * Attach files by path (drag and drop from Explorer, or the file picker). Anything that is not a
+   * regular file (a folder, a missing path, a device) is skipped rather than failing the batch.
+   */
+  async importFiles(paths: string[], mimeOf: (name: string) => string): Promise<{ path: string; filename: string; size: number; mimeType: string }[]> {
+    const out: { path: string; filename: string; size: number; mimeType: string }[] = []
+    for (const p of paths) {
+      if (typeof p !== 'string' || !p) continue
+      try {
+        const st = await stat(p)
+        if (!st.isFile()) continue
+        out.push(await this.importAttachment(p, basename(p), st.size, mimeOf(p)))
+      } catch {
+        /* unreadable or gone: skip */
+      }
+    }
+    return out
   }
 
   /** Push the current draft to the server's Drafts folder (replacing the previous copy). */

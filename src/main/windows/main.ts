@@ -1,7 +1,10 @@
-import { app, BrowserWindow, shell, screen } from 'electron'
+import { app, BrowserWindow, clipboard, shell, screen } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'node:path'
 import type { Kernel } from '@kernel/index'
+import { installContextMenu } from '../contextMenu'
+import { parseMailto } from '../protocol'
+import { emit } from '../ipc/router'
 
 const BOUNDS_KEY = 'windowBounds'
 
@@ -69,6 +72,19 @@ export function createMainWindow(kernel: Kernel, opts: { hidden?: boolean } = {}
       e.preventDefault()
       if (/^https?:/i.test(url)) void shell.openExternal(url)
     }
+  })
+
+  // Right-click for text fields, selected text, and links/images inside messages.
+  installContextMenu(win, {
+    composeTo: (url) => {
+      const req = parseMailto(url)
+      if (req) emit('app.mailto', req)
+    },
+    searchMail: (query) => emit('app.search', { query }),
+    openExternal: (url) => {
+      if (/^https?:/i.test(url)) void shell.openExternal(url)
+    },
+    copyText: (text) => clipboard.writeText(text)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {

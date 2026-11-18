@@ -246,4 +246,28 @@ describe('AccountSyncer with a fake IMAP server', () => {
     expect(s.accountErrors).toEqual([])
     await s.syncer.stop()
   })
+
+  it('undoing a move before it reaches the server cancels it; a second move re-targets it', async () => {
+    const s = setup()
+    k = s.k
+    await s.syncer.tick()
+    const inboxF = k.store.folderBySpecialUse(s.acct.id, 'inbox')!
+    const trashF = k.store.folderBySpecialUse(s.acct.id, 'trash')!
+    const [first, second] = k.store.list({ folderId: inboxF.id })
+    const uid1 = first!.uid
+    // Archive, then Undo before any sync: nothing goes to the server and the message is back as it was.
+    k.mail.archive([first!.id])
+    expect(k.store.getMessage(first!.id)!.uid).toBeLessThan(0)
+    k.mail.move([first!.id], inboxF.id)
+    expect(k.store.getMessage(first!.id)).toMatchObject({ folderId: inboxF.id, uid: uid1 })
+    expect(k.sync.ops.pendingCount(s.acct.id)).toBe(0)
+    // Archive, then delete before any sync: one move from INBOX straight to Trash.
+    k.mail.archive([second!.id])
+    k.mail.delete([second!.id])
+    expect(k.sync.ops.pendingCount(s.acct.id)).toBe(1)
+    await s.syncer.tick()
+    expect(s.fake.ops.filter((o) => o.startsWith('move'))).toEqual([`move ${second!.uid} -> Trash`])
+    expect(k.store.getMessage(second!.id)!.folderId).toBe(trashF.id)
+    expect(k.store.getMessage(first!.id)!.folderId).toBe(inboxF.id)
+  })
 })

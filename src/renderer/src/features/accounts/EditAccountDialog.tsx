@@ -22,7 +22,7 @@ export function EditAccountDialog({ accountId, initialTab = 'general', onClose }
   if (!accountId) return null
   const d = detail.data
   return (
-    <Dialog open onClose={onClose} title={d ? `${d.displayName} — ${d.email}` : 'Account'} width="max-w-2xl">
+    <Dialog open onClose={onClose} title={d ? `${d.displayName} — ${d.email}` : 'Account'} width="max-w-2xl" dismissable={false}>
       {!d ? null : (
         <div className="flex min-h-80 gap-4">
           <nav className="w-36 shrink-0 space-y-0.5 border-r border-border pr-3">
