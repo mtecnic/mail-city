@@ -23,7 +23,7 @@ export function ExportBackupDialog({ open, onClose }: { open: boolean; onClose: 
   }
   const mismatch = confirm.length > 0 && confirm !== pass
   return (
-    <Dialog open={open} onClose={reset} title="Export a backup">
+    <Dialog open={open} onClose={reset} title="Export a backup" dismissable={false}>
       {run.data?.ok ? (
         <div className="space-y-3 text-sm">
           <Alert kind="success">
@@ -86,7 +86,7 @@ export function RestoreBackupDialog({ open, onClose, onRestored }: { open: boole
   }
   const h = file?.header
   return (
-    <Dialog open={open} onClose={reset} title="Restore from a backup">
+    <Dialog open={open} onClose={reset} title="Restore from a backup" dismissable={false}>
       {run.data ? (
         <div className="space-y-3 text-sm">
           <Alert kind="success">Restored. Your accounts are syncing now.</Alert>

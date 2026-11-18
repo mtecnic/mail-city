@@ -6,7 +6,9 @@
     "src/renderer/src/**/*.tsx",
     "src/preload/*.d.ts",
     "src/shared/**/*",
-    "tests/unit/sanitize.test.ts"
+    "tests/unit/sanitize.test.ts",
+    "tests/unit/layout.test.ts",
+    "tests/unit/undoBookkeeping.test.ts"
   ],
   "compilerOptions": {
     "composite": true,

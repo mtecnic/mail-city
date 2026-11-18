@@ -64,7 +64,10 @@ Every claim in this README was checked against the code in a line-by-line audit.
 - **Reading pane**: sanitized HTML in a sandboxed iframe with its own CSP, inline (`cid:`) images resolved locally, **remote images blocked by default** with a one-click load, plain-text messages linkified, attachment chips with open / save-as / copy-image, raw source viewer with "Save .eml", snooze presets, and auto mark-as-read.
 - **Actions**: reply, reply-all, forward, archive, delete (to Trash, or permanently from Trash/Junk), junk / not junk, star, read / unread, move, snooze (later today, tomorrow, this weekend, next week, or pick a date & time), copy link, view source.
 - **Folder management**: create subfolders, rename, delete (system folders protected), mark all read, empty Trash / Junk, sync now.
-- **Right-click everything**: accounts, folders, messages (single or multi-selection), attachments, saved searches. Menus support submenus (Move to…, Snooze…), keyboard navigation, danger styling and shortcut hints.
+- **Right-click everything**: accounts, folders, the unified views, messages (single or multi-selection), attachments, saved searches and recipient chips. Message menus add *Search mail from this sender*, *Filter messages like this…* (opens a prefilled rule) and copy actions. Text fields get Cut, Copy, Paste and spelling suggestions; selected text in a message offers *Search mail for…*; links and images in a message can be opened, copied or saved.
+- **Undo everywhere it matters**: archive, delete, move and junk show a toast with **Undo**. Undoing before the change reaches the server cancels it outright. Deleting from Trash or Junk asks first, because it is permanent.
+- **Hover actions** on every row: archive, delete, read/unread and snooze without opening the message.
+- **Your layout**: drag the edges of the sidebar, message list and assistant to resize them (double-click resets), collapse the sidebar to an icon rail, and drag accounts to reorder them. All of it is remembered. A compact density tightens rows and hides snippets.
 
 ### Compose and send
 
@@ -73,7 +76,7 @@ Every claim in this README was checked against the code in a line-by-line audit.
 - **Addressing**: contact autocomplete with ranked suggestions, chips, paste a comma- or semicolon-separated list, Cc/Bcc on demand, and a From picker that lists every identity of every account, grouped by account, so a draft can be sent from any mailbox.
 - **Identities & signatures**: multiple send-as aliases per account with their own name, Reply-To and signature. Replies automatically pick the identity the message was addressed to.
 - **Reply / forward** with proper quoting, `In-Reply-To` / `References` threading headers, reply-all de-duplication that drops your own addresses, and re-attached forwards.
-- **Attachments** via file picker, with size display; outgoing MIME built by nodemailer's `MailComposer`.
+- **Attachments** via file picker or by dragging files from Explorer onto the compose window, with size display; outgoing MIME built by nodemailer's `MailComposer`. `Ctrl+Enter` sends; `Esc` minimizes.
 - **Undo send** (configurable 0 to 60 second window) and **scheduled send** at a chosen date and time, both backed by a durable outbox with retry, cancel-and-edit and failure notifications.
 - Sent mail is appended to the Sent folder on servers that need it (Gmail and Outlook do this themselves).
 
@@ -208,8 +211,12 @@ Full details: [docs/MCP.md](docs/MCP.md).
 | `x` | Toggle selection of the current message | `s` | Star |
 | `v` | Move to folder… | `u` / `Shift+I` | Mark unread / read |
 | `z` | Snooze… | `!` | Mark as junk |
-| `Ctrl+J` | Toggle assistant | `Esc` | Deselect, or clear search |
-| `?` | Shortcut help | Right-click | Context menu anywhere |
+| `Ctrl+J` | Toggle assistant | `Esc` | Close dialog, deselect, or clear search |
+| `Ctrl+Shift+S` | Collapse / expand sidebar | `Ctrl+Enter` | Send (in the composer) |
+| `Shift+J` / `Shift+K` | Extend the selection | Right-click | Context menu anywhere |
+| `?` | Shortcut help | Drag | Resize panes, reorder accounts, attach files, file messages |
+
+Shortcuts pause while a dialog or menu is open, so a stray `e` or `#` never acts on the messages behind it.
 
 ## Settings at a glance
 

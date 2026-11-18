@@ -63,6 +63,26 @@ export class OpQueue {
       .run()
   }
 
+  /** A move that has not reached the server yet and carries this message (for undo / re-move). */
+  queuedMoveFor(accountId: string, messageId: string): { id: string; op: Extract<PendingOp, { kind: 'move' }> } | undefined {
+    const rows = this.db
+      .select()
+      .from(pendingOps)
+      .where(and(eq(pendingOps.accountId, accountId), eq(pendingOps.status, 'queued'), eq(pendingOps.kind, 'move')))
+      .orderBy(asc(pendingOps.createdAt))
+      .all()
+    for (const r of rows) {
+      const op = r.payload as Extract<PendingOp, { kind: 'move' }>
+      if (op.messageIds?.includes(messageId)) return { id: r.id, op }
+    }
+    return undefined
+  }
+
+  /** Replace a queued op's payload (only while it is still queued). */
+  replace(id: string, op: PendingOp): void {
+    this.db.update(pendingOps).set({ payload: op }).where(and(eq(pendingOps.id, id), eq(pendingOps.status, 'queued'))).run()
+  }
+
   markRunning(id: string): void {
     this.db.update(pendingOps).set({ status: 'running' }).where(eq(pendingOps.id, id)).run()
   }

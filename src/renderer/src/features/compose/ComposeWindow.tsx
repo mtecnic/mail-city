@@ -6,7 +6,8 @@ import { Button, Select, cn } from '@renderer/components/ui'
 import { promptDialog } from '@renderer/components/dialogs'
 import { formatBytes } from '@renderer/lib/format'
 import { useCompose, type ComposerState } from '@renderer/store/compose'
-import { RecipientInput } from './RecipientInput'
+import { RecipientInput, type RecipientField } from './RecipientInput'
+import type { Address } from '@shared/schemas/mail'
 import { useComposeEditor, EditorToolbar, EditorContent } from './Editor'
 import type { DraftInput } from '@shared/schemas/compose'
 import { ComposeAiBar } from '@renderer/features/ai/ComposeAiBar'
@@ -98,6 +99,12 @@ function ComposeWindow({ c }: { c: ComposerState }) {
     mutationFn: () => invoke('compose.pickAttachments'),
     onSuccess: (files) => update(c.key, { attachments: [...c.attachments, ...files] })
   })
+  const [dropping, setDropping] = useState(false)
+  const dropFiles = useMutation({
+    mutationFn: (paths: string[]) => invoke('compose.importFiles', { paths }),
+    onSuccess: (files) => files.length && update(c.key, { attachments: [...c.attachments, ...files] }),
+    onError: (e) => setError(e.message)
+  })
 
   const closeAndKeep = async () => {
     if (editor && (c.to.length || c.subject || editor.getText().trim() || c.attachments.length)) {
@@ -112,6 +119,14 @@ function ComposeWindow({ c }: { c: ComposerState }) {
     if (draftId) await invoke('drafts.discard', { id: draftId })
     void qc.invalidateQueries({ queryKey: ['drafts'] })
     close(c.key)
+  }
+
+  // Right-click a recipient chip → Move to To / Cc / Bcc.
+  const moveRecipient = (a: Address, to: RecipientField) => {
+    const strip = (l: Address[]) => l.filter((x) => x.address !== a.address)
+    const next = { to: strip(c.to), cc: strip(c.cc), bcc: strip(c.bcc) }
+    next[to] = [...next[to], a]
+    update(c.key, { ...next, showCc: c.showCc || to === 'cc', showBcc: c.showBcc || to === 'bcc' })
   }
 
   const account = accounts.data?.find((a) => a.id === c.accountId)
@@ -129,7 +144,38 @@ function ComposeWindow({ c }: { c: ComposerState }) {
   }
 
   return (
-    <div className="pointer-events-auto flex h-[560px] w-[640px] max-w-[calc(100vw-2rem)] flex-col rounded-t-lg border border-border bg-bg shadow-2xl">
+    <div
+      className="pointer-events-auto relative flex h-[560px] w-[640px] max-w-[calc(100vw-2rem)] flex-col rounded-t-lg border border-border bg-bg shadow-2xl"
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault()
+          if (canSend) send.mutate(undefined)
+        } else if (e.key === 'Escape' && !e.defaultPrevented) {
+          update(c.key, { minimized: true })
+        }
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        if (!dropping) setDropping(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return
+        e.preventDefault()
+        setDropping(false)
+        const paths = [...e.dataTransfer.files].map((f) => window.mail.pathForFile(f)).filter(Boolean)
+        if (paths.length) dropFiles.mutate(paths)
+      }}
+    >
+      {dropping && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-t-lg border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
+          <Paperclip className="mr-2 size-4" /> Drop files to attach
+        </div>
+      )}
       <div className="flex items-center justify-between rounded-t-lg bg-panel px-3 py-1.5 text-sm">
         <span className="truncate font-medium">{c.subject || 'New message'}</span>
         <div className="flex items-center gap-1">
@@ -180,9 +226,9 @@ function ComposeWindow({ c }: { c: ComposerState }) {
             </button>
           )}
         </div>
-        <RecipientInput label="To" value={c.to} onChange={(to) => update(c.key, { to })} autoFocus={!c.to.length} />
-        {c.showCc && <RecipientInput label="Cc" value={c.cc} onChange={(cc) => update(c.key, { cc })} />}
-        {c.showBcc && <RecipientInput label="Bcc" value={c.bcc} onChange={(bcc) => update(c.key, { bcc })} />}
+        <RecipientInput label="To" field="to" value={c.to} onChange={(to) => update(c.key, { to })} onMoveTo={moveRecipient} autoFocus={!c.to.length} />
+        {c.showCc && <RecipientInput label="Cc" field="cc" value={c.cc} onChange={(cc) => update(c.key, { cc })} onMoveTo={moveRecipient} />}
+        {c.showBcc && <RecipientInput label="Bcc" field="bcc" value={c.bcc} onChange={(bcc) => update(c.key, { bcc })} onMoveTo={moveRecipient} />}
         <input className="h-8 w-full border-b border-border bg-transparent text-sm outline-none placeholder:text-muted" placeholder="Subject" value={c.subject} onChange={(e) => update(c.key, { subject: e.target.value })} />
       </div>
 
@@ -211,7 +257,7 @@ function ComposeWindow({ c }: { c: ComposerState }) {
       <EditorToolbar editor={editor} />
       {error && <div className="px-3 py-1 text-xs text-danger">{error}</div>}
       <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-        <Button variant="primary" onClick={() => send.mutate(undefined)} disabled={!canSend} loading={send.isPending}>
+        <Button variant="primary" onClick={() => send.mutate(undefined)} disabled={!canSend} loading={send.isPending} title="Send (Ctrl+Enter)">
           <Send className="size-4" /> Send
         </Button>
         <Button

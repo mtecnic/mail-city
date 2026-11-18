@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Archive, AlertOctagon, FolderInput, MailOpen, Paperclip, Star, Trash2, X } from 'lucide-react'
+import { Archive, AlertOctagon, AlarmClock, CheckCircle2, FolderInput, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2, X } from 'lucide-react'
 import { invoke } from '@renderer/lib/api'
 import { Button, cn, Spinner } from '@renderer/components/ui'
 import { useContextMenu } from '@renderer/components/ContextMenu'
@@ -19,7 +19,7 @@ export function useMessageMenuDeps(): MessageMenuDeps {
   const folders = useFolders()
   const actions = useMailActions()
   const compose = useComposeActions()
-  const { selectMessage, setSourceMessageId } = useUi()
+  const { selectMessage, setSourceMessageId, setMailbox, setRuleDraft, openSettings } = useUi()
   const snooze = useMutation({
     mutationFn: (v: { ids: string[]; until: Date }) => invoke('messages.snooze', { ids: v.ids, until: v.until.toISOString() }),
     onSuccess: () => {
@@ -50,9 +50,14 @@ export function useMessageMenuDeps(): MessageMenuDeps {
       reply: (id, mode) => void compose.reply(id, mode),
       snooze: (ids, until) => snooze.mutate({ ids, until }),
       viewSource: (id) => setSourceMessageId(id),
-      open: (id) => selectMessage(id)
+      open: (id) => selectMessage(id),
+      search: (query) => setMailbox({ kind: 'search', query, within: null }),
+      filterLike: (m) => {
+        setRuleDraft({ name: `From ${m.from.name || m.from.address}`, conditions: { match: 'all', items: [{ field: 'from', op: 'contains', value: m.from.address }] }, actions: [{ type: 'markRead' }], accountIds: [m.accountId] })
+        openSettings('rules')
+      }
     }),
-    [folders.data, actions.setFlags, actions.archive, actions.del, actions.move, actions.junk, compose, snooze, selectMessage, setSourceMessageId]
+    [folders.data, actions.setFlags, actions.archive, actions.del, actions.move, actions.junk, compose, snooze, selectMessage, setSourceMessageId, setMailbox, setRuleDraft, openSettings]
   )
 }
 
@@ -100,14 +105,8 @@ export function MessageList() {
     rowVirtualizer.scrollToIndex(to)
   }
 
-  if (q.isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spinner />
-      </div>
-    )
-  }
-  if (!items.length) return <div className="flex flex-1 items-center justify-center text-sm text-muted">{q.isError ? q.error.message : 'Nothing here.'}</div>
+  if (q.isLoading) return <ListSkeleton />
+  if (!items.length) return <EmptyList error={q.isError ? q.error.message : null} mailbox={mailbox} />
 
   const allSelected = items.length > 0 && selected.length >= items.length
   const ids = selectedIds
@@ -169,6 +168,15 @@ export function MessageList() {
                     onContextMenu={(e) => openMenuFor(e, m)}
                     onToggle={() => toggleSelected(m.id)}
                     onStar={() => actions.setFlags.mutate({ ids: [m.id], flags: { flagged: !m.flags.flagged } })}
+                    onQuick={(kind, e) => {
+                      if (kind === 'archive') deps.actions.archive([m.id])
+                      else if (kind === 'delete') deps.actions.del([m.id])
+                      else if (kind === 'read') actions.setFlags.mutate({ ids: [m.id], flags: { seen: !m.flags.seen } })
+                      else if (kind === 'snooze') {
+                        const snoozeItem = messageMenu([m], deps).find((i) => 'label' in i && i.label === 'Snooze…') as { submenu?: unknown } | undefined
+                        menu.openAt(e.currentTarget as HTMLElement, (snoozeItem?.submenu as never[]) ?? [])
+                      }
+                    }}
                     dragIds={selectedIds.includes(m.id) ? selectedIds : [m.id]}
                   />
                 ) : (
@@ -185,13 +193,15 @@ export function MessageList() {
   )
 }
 
-function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggle, onStar, dragIds }: { m: MessageListItem; active: boolean; checked: boolean; showCheckbox: boolean; onClick: (e: React.MouseEvent) => void; onContextMenu: (e: React.MouseEvent) => void; onToggle: () => void; onStar: () => void; dragIds: string[] }) {
+type QuickAction = 'archive' | 'delete' | 'read' | 'snooze'
+
+function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggle, onStar, onQuick, dragIds }: { m: MessageListItem; active: boolean; checked: boolean; showCheckbox: boolean; onClick: (e: React.MouseEvent) => void; onContextMenu: (e: React.MouseEvent) => void; onToggle: () => void; onStar: () => void; onQuick: (kind: QuickAction, e: React.MouseEvent) => void; dragIds: string[] }) {
   const unread = !m.flags.seen
   const who = m.from.name || m.from.address
   const onCheckbox = useRef(false)
   return (
     <div
-      className={cn('group flex cursor-default gap-1 border-b border-border py-2 pr-2 pl-1 select-none', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')}
+      className={cn('group flex cursor-default gap-1 border-b border-border py-2 pr-2 pl-1 select-none compact:py-1', active ? 'bg-accent/15' : checked ? 'bg-accent/10' : 'hover:bg-hover')}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseDown={(e) => (onCheckbox.current = !!(e.target as HTMLElement).closest('[data-select]'))}
@@ -211,14 +221,29 @@ function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggl
       >
         <input type="checkbox" className={cn('size-3.5', !checked && !showCheckbox && 'opacity-0 group-hover:opacity-100')} checked={checked} onChange={onToggle} aria-label="Select" />
       </label>
-      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: avatarColor(m.from.address) }}>
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white compact:size-6 compact:text-[9px]" style={{ background: avatarColor(m.from.address) }}>
         {initials(m.from.name, m.from.address)}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className={cn('truncate text-sm', unread ? 'font-semibold' : 'text-fg')}>{who}</span>
           {m.threadCount > 1 && <span className="text-xs text-muted">{m.threadCount}</span>}
-          <span className="ml-auto shrink-0 text-xs text-muted">{formatListDate(m.date)}</span>
+          <span className="ml-auto shrink-0 text-xs text-muted group-hover:hidden">{formatListDate(m.date)}</span>
+          {/* Hover actions take the date's place. */}
+          <span className="-my-1 ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            <QuickButton label="Archive (e)" onClick={(e) => onQuick('archive', e)}>
+              <Archive className="size-3.5" />
+            </QuickButton>
+            <QuickButton label="Delete (#)" onClick={(e) => onQuick('delete', e)}>
+              <Trash2 className="size-3.5" />
+            </QuickButton>
+            <QuickButton label={unread ? 'Mark read' : 'Mark unread (u)'} onClick={(e) => onQuick('read', e)}>
+              {unread ? <MailOpen className="size-3.5" /> : <Mail className="size-3.5" />}
+            </QuickButton>
+            <QuickButton label="Snooze (z)" onClick={(e) => onQuick('snooze', e)}>
+              <AlarmClock className="size-3.5" />
+            </QuickButton>
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className={cn('truncate text-sm', unread && 'font-medium')}>{m.subject || '(no subject)'}</span>
@@ -227,7 +252,7 @@ function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggl
           {m.aiCategory && !['primary', 'needs_reply'].includes(m.aiCategory) && <span className="shrink-0 rounded bg-hover px-1 text-[10px] text-muted">{m.aiCategory.replace('_', ' ')}</span>}
           {m.aiCategory === 'needs_reply' && <span className="shrink-0 rounded bg-accent/15 px-1 text-[10px] text-accent">reply</span>}
         </div>
-        <div className="truncate text-xs text-muted">{m.snippet}</div>
+        <div className="truncate text-xs text-muted compact:hidden">{m.snippet}</div>
       </div>
       <button
         className={cn('self-start rounded p-0.5', m.flags.flagged ? 'text-yellow-500' : 'text-muted opacity-0 group-hover:opacity-100')}
@@ -239,6 +264,59 @@ function Row({ m, active, checked, showCheckbox, onClick, onContextMenu, onToggl
       >
         <Star className="size-3.5" fill={m.flags.flagged ? 'currentColor' : 'none'} />
       </button>
+    </div>
+  )
+}
+
+function QuickButton({ label, onClick, children }: { label: string; onClick: (e: React.MouseEvent) => void; children: React.ReactNode }) {
+  return (
+    <button
+      className="rounded p-1 text-muted hover:bg-bg hover:text-fg"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick(e)
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function ListSkeleton() {
+  return (
+    <div className="flex-1 overflow-hidden" aria-busy="true" aria-label="Loading messages">
+      {Array.from({ length: 9 }, (_, i) => (
+        <div key={i} className="flex gap-2 border-b border-border px-3 py-2.5">
+          <div className="size-8 shrink-0 animate-pulse rounded-full bg-hover" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-2/5 animate-pulse rounded bg-hover" />
+            <div className="h-3 w-4/5 animate-pulse rounded bg-hover" />
+            <div className="h-2.5 w-3/5 animate-pulse rounded bg-hover" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EmptyList({ error, mailbox }: { error: string | null; mailbox: ReturnType<typeof useUi.getState>['mailbox'] }) {
+  const inboxLike = (mailbox.kind === 'unified' && (mailbox.specialUse === 'inbox' || mailbox.specialUse === 'focused')) || mailbox.kind === 'folder'
+  const [Icon, title, hint] = error
+    ? [AlertOctagon, 'Could not load messages', error]
+    : mailbox.kind === 'search'
+      ? [SearchX, `No results for “${mailbox.query}”`, 'Try fewer words, or operators like from: subject: has:attachment']
+      : mailbox.kind === 'snoozed'
+        ? [AlarmClock, 'Nothing snoozed', 'Snooze a message to bring it back later.']
+        : inboxLike
+          ? [CheckCircle2, 'You’re all caught up', 'New mail will appear here.']
+          : [Inbox, 'Nothing here', '']
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+      <Icon className={cn('size-8', error ? 'text-danger' : 'text-muted/60')} />
+      <div className="text-sm font-medium">{title}</div>
+      {hint && <div className="max-w-64 text-xs text-muted">{hint}</div>}
     </div>
   )
 }

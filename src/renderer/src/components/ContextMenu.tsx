@@ -128,7 +128,7 @@ function MenuPanel({ x, y, items, onClose, root }: { x: number; y: number; items
 
   return (
     <>
-      <div ref={ref} data-ctx-menu className="fixed z-[100] min-w-44 max-w-80 rounded-md border border-border bg-panel py-1 text-sm shadow-xl" style={pos} onContextMenu={(e) => e.preventDefault()}>
+      <div ref={ref} data-ctx-menu role="menu" className="animate-pop fixed z-[100] min-w-44 max-w-80 rounded-md border border-border bg-panel py-1 text-sm shadow-xl" style={pos} onContextMenu={(e) => e.preventDefault()}>
         {items.map((it, i) => {
           if (it.type === 'separator') return <div key={i} className="my-1 h-px bg-border" />
           if (it.type === 'label') return <div key={i} className="px-3 py-1 text-[11px] font-semibold uppercase text-muted">{it.label}</div>

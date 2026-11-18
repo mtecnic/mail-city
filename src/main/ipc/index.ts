@@ -40,7 +40,7 @@ export function getMcpHttp(): McpHttpServer | null {
 }
 
 export function registerIpc(kernel: Kernel): void {
-  handle('app.version', () => ({ version: app.getVersion(), electron: process.versions.electron ?? '' }))
+  handle('app.version', () => ({ version: app.getVersion(), electron: process.versions.electron ?? '', packaged: app.isPackaged }))
   handle('app.openExternal', async ({ url }) => {
     if (!/^https?:/i.test(url)) throw new Error('Only http(s) URLs can be opened')
     await shell.openExternal(url)
@@ -134,15 +134,9 @@ export function registerIpc(kernel: Kernel): void {
     const win = BrowserWindow.getFocusedWindow() ?? undefined
     const r = await dialog.showOpenDialog(win as never, { properties: ['openFile', 'multiSelections'] })
     if (r.canceled) return []
-    const { stat } = await import('node:fs/promises')
-    const { basename } = await import('node:path')
-    return Promise.all(
-      r.filePaths.map(async (p) => {
-        const s = await stat(p)
-        return kernel.compose.importAttachment(p, basename(p), s.size, mimeFromName(p))
-      })
-    )
+    return kernel.compose.importFiles(r.filePaths, mimeFromName)
   })
+  handle('compose.importFiles', ({ paths }) => kernel.compose.importFiles(paths, mimeFromName))
   handle('compose.send', async ({ draft, scheduledAt }) => {
     const saved = kernel.drafts.save(draft)
     return kernel.outbox.send(saved, { scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined })

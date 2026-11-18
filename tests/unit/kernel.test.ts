@@ -74,4 +74,18 @@ describe('Kernel', () => {
     const op = k.sync.ops.next(a.id)!
     expect(op.payload).toMatchObject({ kind: 'setFlags', folderPath: 'INBOX', uids: [7], remove: ['\\Seen'] })
   })
+
+  it('attaches dropped files and skips folders and missing paths', async () => {
+    k = makeKernel()
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'mc-drop-'))
+    const file = join(dir, 'report.pdf')
+    writeFileSync(file, 'pdf-bytes')
+    mkdirSync(join(dir, 'a-folder'))
+    const out = await k.compose.importFiles([file, join(dir, 'a-folder'), join(dir, 'missing.txt'), ''], (n) => (n.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'))
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ filename: 'report.pdf', size: 9, mimeType: 'application/pdf' })
+  })
 })

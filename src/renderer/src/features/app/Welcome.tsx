@@ -1,5 +1,5 @@
 import { Mail, Plus, Sparkles, Shield, Zap, Upload } from 'lucide-react'
-import { Button } from '@renderer/components/ui'
+import { Button, Dialog } from '@renderer/components/ui'
 
 export function Welcome({ onAddAccount, onRestore }: { onAddAccount: () => void; onRestore?: () => void }) {
   return (
@@ -51,37 +51,37 @@ export const SHORTCUTS: [string, string][] = [
   ['c', 'Compose'],
   ['/', 'Search'],
   ['j / k', 'Next / previous message'],
-  ['Enter', 'Expand / collapse the open message in a conversation'],
+  ['Shift+j / k', 'Extend selection'],
+  ['Enter', 'Expand / collapse in a conversation'],
   ['e', 'Archive'],
   ['#', 'Delete'],
   ['s', 'Star'],
-  ['u', 'Mark unread'],
+  ['u / Shift+I', 'Mark unread / read'],
   ['r / a / f', 'Reply / reply all / forward'],
   ['x', 'Select / deselect message'],
   ['v', 'Move to folder'],
   ['z', 'Snooze'],
   ['!', 'Mark as junk'],
-  ['Right-click', 'Context menu (accounts, folders, messages)'],
+  ['Ctrl+Enter', 'Send (in the composer)'],
   ['Ctrl+J', 'Assistant'],
-  ['Esc', 'Deselect'],
+  ['Ctrl+Shift+S', 'Collapse / expand sidebar'],
+  ['Right-click', 'Menus on accounts, folders, messages, chips, text and links'],
+  ['Drag', 'Messages onto folders, accounts to reorder, files into the composer, pane edges to resize'],
+  ['Esc', 'Close / deselect'],
   ['?', 'This help']
 ]
 
 export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-80 rounded-lg border border-border bg-panel p-5 text-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-3 font-semibold">Keyboard shortcuts</h2>
-        <div className="space-y-1.5">
-          {SHORTCUTS.map(([k, d]) => (
-            <div key={k} className="flex items-center justify-between">
-              <span className="text-muted">{d}</span>
-              <kbd className="rounded border border-border bg-bg px-1.5 py-0.5 text-xs">{k}</kbd>
-            </div>
-          ))}
-        </div>
+    <Dialog open={open} onClose={onClose} title="Keyboard shortcuts" width="max-w-xl">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        {SHORTCUTS.map(([k, d]) => (
+          <div key={k} className="flex items-center justify-between gap-3">
+            <span className="text-muted">{d}</span>
+            <kbd className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-xs">{k}</kbd>
+          </div>
+        ))}
       </div>
-    </div>
+    </Dialog>
   )
 }

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { cn } from '@renderer/components/ui'
 import { invoke } from '@renderer/lib/api'
+import { useContextMenu, type MenuItem } from '@renderer/components/ContextMenu'
 import type { Address } from '@shared/schemas/mail'
 
 const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/
@@ -19,12 +20,31 @@ function parse(text: string): Address[] {
   return out
 }
 
-export function RecipientInput({ label, value, onChange, autoFocus }: { label: string; value: Address[]; onChange: (v: Address[]) => void; autoFocus?: boolean }) {
+export type RecipientField = 'to' | 'cc' | 'bcc'
+
+export function RecipientInput({ label, field, value, onChange, onMoveTo, autoFocus }: { label: string; field?: RecipientField; value: Address[]; onChange: (v: Address[]) => void; onMoveTo?: (a: Address, to: RecipientField) => void; autoFocus?: boolean }) {
   const [text, setText] = useState('')
   const [invalid, setInvalid] = useState(false)
   const [hi, setHi] = useState(0)
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const menu = useContextMenu()
+  const chipMenu = (a: Address): MenuItem[] => [
+    { label: 'Copy address', onSelect: () => void navigator.clipboard.writeText(a.name ? `${a.name} <${a.address}>` : a.address) },
+    {
+      label: 'Edit',
+      onSelect: () => {
+        onChange(value.filter((v) => v.address !== a.address))
+        setText(a.name ? `${a.name} <${a.address}>` : a.address)
+        setTimeout(() => inputRef.current?.focus(), 0)
+      }
+    },
+    ...(onMoveTo
+      ? (['to', 'cc', 'bcc'] as const).filter((f) => f !== field).map<MenuItem>((f) => ({ label: `Move to ${f === 'to' ? 'To' : f === 'cc' ? 'Cc' : 'Bcc'}`, onSelect: () => onMoveTo(a, f) }))
+      : []),
+    { type: 'separator' },
+    { label: 'Remove', danger: true, onSelect: () => onChange(value.filter((v) => v.address !== a.address)) }
+  ]
   const suggestions = useQuery({
     queryKey: ['contacts.suggest', text],
     queryFn: () => invoke('contacts.suggest', { prefix: text, limit: 6 }),
@@ -68,6 +88,7 @@ export function RecipientInput({ label, value, onChange, autoFocus }: { label: s
         commit()
       }
     } else if (e.key === 'Escape') {
+      if (open && items.length) e.preventDefault() // first Escape closes suggestions only
       setOpen(false)
     } else if (e.key === 'Backspace' && !text && value.length) {
       onChange(value.slice(0, -1))
@@ -79,7 +100,7 @@ export function RecipientInput({ label, value, onChange, autoFocus }: { label: s
       <span className="w-10 shrink-0 pt-0.5 text-xs text-muted">{label}</span>
       <div className="flex flex-1 flex-wrap items-center gap-1">
         {value.map((a) => (
-          <span key={a.address} className="flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-xs" title={a.address}>
+          <span key={a.address} className="flex items-center gap-1 rounded-full border border-border bg-panel px-2 py-0.5 text-xs" title={a.address} onContextMenu={(e) => menu.open(e, chipMenu(a))}>
             {a.name || a.address}
             <button className="text-muted hover:text-fg" onClick={() => onChange(value.filter((v) => v.address !== a.address))} aria-label="Remove">
               <X className="size-3" />

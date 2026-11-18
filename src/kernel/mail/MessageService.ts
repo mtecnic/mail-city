@@ -140,9 +140,35 @@ export class MessageService {
     this.setFlags(ids, { flagged })
   }
 
+  /**
+   * A message that was just moved locally still has a placeholder UID and its move waiting in the
+   * queue. Moving it again (Undo, or a second move) takes it back out of that queued op and puts the
+   * local row back where the server still has it, so the next action starts from the truth.
+   */
+  private rewindQueuedMoves(ids: string[]): void {
+    for (const id of ids) {
+      const row = this.store.getMessage(id)
+      if (!row || row.uid >= 0) continue
+      const pending = this.engine.ops.queuedMoveFor(row.accountId, id)
+      if (!pending) continue
+      const i = pending.op.messageIds.indexOf(id)
+      const src = this.store.folderByPath(row.accountId, pending.op.folderPath)
+      const uid = pending.op.uids[i]
+      if (i < 0 || !src || uid === undefined) continue
+      const rest = { ...pending.op, uids: pending.op.uids.filter((_, j) => j !== i), messageIds: pending.op.messageIds.filter((_, j) => j !== i) }
+      if (rest.uids.length) this.engine.ops.replace(pending.id, rest)
+      else this.engine.ops.complete(pending.id)
+      const from = row.folderId
+      this.store.moveLocal(id, src.id, uid)
+      this.store.refreshFolderCounts(from)
+      this.store.refreshFolderCounts(src.id)
+    }
+  }
+
   move(ids: string[], toFolderId: string): void {
     const dest = this.store.getFolder(toFolderId)
     if (!dest) throw new KernelError('NOT_FOUND', 'Destination folder not found')
+    this.rewindQueuedMoves(ids)
     for (const g of this.groupByFolder(ids).values()) {
       if (g.accountId !== dest.accountId) throw new KernelError('CROSS_ACCOUNT', 'Cannot move messages between accounts')
       if (g.folderId === dest.id) continue
@@ -168,6 +194,7 @@ export class MessageService {
 
   /** Delete: move to Trash, or expunge if already in Trash. */
   delete(ids: string[]): void {
+    this.rewindQueuedMoves(ids)
     for (const g of this.groupByFolder(ids).values()) {
       const folder = this.store.getFolder(g.folderId)
       const trash = this.store.folderBySpecialUse(g.accountId, 'trash')

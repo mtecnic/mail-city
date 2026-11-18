@@ -113,7 +113,7 @@ export const AccountDetailSchema = z.object({
 })
 
 export const channels = {
-  'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string() })),
+  'app.version': defineChannel(z.void(), z.object({ version: z.string(), electron: z.string(), packaged: z.boolean() })),
   'app.openExternal': defineChannel(z.object({ url: z.string().url() }), z.void()),
 
   'settings.get': defineChannel(z.void(), AppSettingsSchema),
@@ -177,6 +177,8 @@ export const channels = {
   // ---- compose ------------------------------------------------------------
   'compose.replyTemplate': defineChannel(z.object({ messageId: z.string(), mode: ReplyModeSchema }), ReplyTemplateSchema),
   'compose.pickAttachments': defineChannel(z.void(), z.array(DraftAttachmentSchema)),
+  /** Attach files dropped onto the composer (paths resolved by the preload). */
+  'compose.importFiles': defineChannel(z.object({ paths: z.array(z.string()).max(100) }), z.array(DraftAttachmentSchema)),
   'compose.send': defineChannel(z.object({ draft: DraftInputSchema, scheduledAt: z.string().optional() }), OutboxItemSchema),
   'drafts.list': defineChannel(z.object({ accountId: z.string().optional() }), z.array(DraftSchema)),
   'drafts.get': defineChannel(z.object({ id: z.string() }), DraftSchema.nullable()),
@@ -322,6 +324,8 @@ export const events = {
   'unread.changed': z.object({ total: z.number() }),
   'app.mailto': MailtoSchema,
   'app.compose': z.void(),
+  /** Search mail for this text (native "Search mail for…" on a selection). */
+  'app.search': z.object({ query: z.string() }),
   'app.openSettings': z.void(),
   'app.openMessage': z.object({ id: z.string(), accountId: z.string(), folderId: z.string() }),
   'app.openOutbox': z.object({ id: z.string() }),

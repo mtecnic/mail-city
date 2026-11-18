@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Clock, FileEdit, RotateCw, Send, Trash2, Undo2 } from 'lucide-react'
 import { invoke, onEvent } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui'
 import { formatFullDate } from '@renderer/lib/format'
 import { useComposeActions } from './useComposeActions'
+import { toast, dismissToast } from '@renderer/components/toast'
+import { useUi } from '@renderer/store/ui'
 
 export function useOutbox() {
   const qc = useQueryClient()
@@ -76,32 +78,59 @@ export function OutboxView() {
 export function UndoSendToast() {
   const qc = useQueryClient()
   const outbox = useOutbox()
+  const setMailbox = useUi((s) => s.setMailbox)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(t)
   }, [])
   const { openDraft } = useComposeActions()
+  const subjects = useRef(new Map<string, string>())
+  const shown = useRef(new Set<string>())
   const pending = outbox.data?.filter((o) => o.undoUntil && new Date(o.undoUntil).getTime() > now && o.status === 'queued') ?? []
-  const sentRecently = outbox.data?.filter((o) => o.status === 'sent') ?? []
-  if (!pending.length && !sentRecently.length) return null
-  return (
-    <div className="pointer-events-auto fixed bottom-4 left-1/2 z-50 -translate-x-1/2 space-y-2">
-      {pending.map((o) => (
-        <div key={o.id} className="flex items-center gap-3 rounded-md border border-border bg-panel px-3 py-2 text-sm shadow-lg">
-          <span>Sending “{o.subject || '(no subject)'}” in {Math.max(0, Math.ceil((new Date(o.undoUntil!).getTime() - now) / 1000))}s</span>
-          <Button
-            size="sm"
-            onClick={async () => {
-              const d = await invoke('outbox.cancel', { id: o.id })
-              void qc.invalidateQueries({ queryKey: ['outbox'] })
-              if (d) void openDraft(d.id)
-            }}
-          >
-            <Undo2 className="size-3.5" /> Undo
-          </Button>
-        </div>
-      ))}
-    </div>
+
+  // Live "Sending … in Ns · Undo" toasts in the shared stack.
+  useEffect(() => {
+    const live = new Set(pending.map((o) => o.id))
+    for (const o of pending) {
+      subjects.current.set(o.id, o.subject || '(no subject)')
+      shown.current.add(o.id)
+      toast({
+        id: `send:${o.id}`,
+        duration: 0,
+        text: `Sending “${o.subject || '(no subject)'}” in ${Math.max(0, Math.ceil((new Date(o.undoUntil!).getTime() - now) / 1000))}s`,
+        action: {
+          label: 'Undo',
+          run: async () => {
+            const d = await invoke('outbox.cancel', { id: o.id })
+            void qc.invalidateQueries({ queryKey: ['outbox'] })
+            if (d) void openDraft(d.id)
+          }
+        }
+      })
+    }
+    for (const id of shown.current) {
+      if (!live.has(id)) {
+        dismissToast(`send:${id}`)
+        shown.current.delete(id)
+      }
+    }
+  })
+
+  useEffect(
+    () =>
+      onEvent('outbox.sent', ({ id }) => {
+        dismissToast(`send:${id}`)
+        toast({ kind: 'success', text: `Sent “${subjects.current.get(id) ?? 'message'}”` })
+      }),
+    []
   )
+  useEffect(
+    () =>
+      onEvent('outbox.failed', ({ id, error }) =>
+        toast({ kind: 'error', duration: 12_000, text: `Couldn’t send “${subjects.current.get(id) ?? 'message'}”: ${error}`, action: { label: 'Open outbox', run: () => setMailbox({ kind: 'outbox' }) } })
+      ),
+    [setMailbox]
+  )
+  return null
 }

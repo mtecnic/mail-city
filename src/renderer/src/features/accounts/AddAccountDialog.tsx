@@ -117,7 +117,7 @@ export function AddAccountDialog({ open, onClose }: { open: boolean; onClose: ()
   const canSubmit = !!email && !!imap.host && !!smtp.host && (ticket ? true : password.length > 0)
 
   return (
-    <Dialog open={open} onClose={close} title="Add account" width="max-w-xl">
+    <Dialog open={open} onClose={close} title="Add account" width="max-w-xl" dismissable={false}>
       {error && (
         <div className="mb-3">
           <Alert kind="error">{error}</Alert>

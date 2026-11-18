@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { ChannelName, ChannelInput, ChannelOutput, EventName, EventPayload } from '@shared/ipc'
 
 /**
@@ -10,6 +10,8 @@ export interface MailApi {
   invoke<C extends ChannelName>(channel: C, ...args: ChannelInput<C> extends void ? [] : [ChannelInput<C>]): Promise<ChannelOutput<C>>
   on<E extends EventName>(event: E, handler: (payload: EventPayload<E>) => void): () => void
   platform: NodeJS.Platform
+  /** Filesystem path of a File from a drag-and-drop (empty string when it has none). */
+  pathForFile(file: File): string
 }
 
 const api: MailApi = {
@@ -23,7 +25,14 @@ const api: MailApi = {
     ipcRenderer.on(`event:${event}`, listener)
     return () => ipcRenderer.off(`event:${event}`, listener)
   },
-  platform: process.platform
+  platform: process.platform,
+  pathForFile(file) {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('mail', api)

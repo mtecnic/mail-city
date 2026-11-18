@@ -9,6 +9,15 @@
 - Fix: conversations showed the same email several times and list thread counts were roughly doubled. Gmail stores one email in several IMAP folders (INBOX, All Mail, labels); conversations, counts, search and Ask-my-mail now show each email once, keeping the copy you opened.
 - Fix: archiving a Gmail message when All Mail was already synced hit a database conflict and left a duplicate until the next sync.
 
+### Interface
+
+- Native right-click menus: Cut, Copy, Paste and spelling suggestions in text fields; Copy and *Search mail for…* on selected text; open, copy or save links and images inside messages.
+- Resizable sidebar, message list and assistant (drag the edge, double-click to reset), a collapsible icon-rail sidebar (`Ctrl+Shift+S`), and drag-to-reorder accounts; all remembered.
+- Toasts with Undo for archive, delete, move and junk; undoing before the server sees the change cancels it. Permanent deletes ask first. Sent and failed-send confirmations.
+- Hover actions on message rows; more menu items (search from sender, *Filter messages like this…*, copy sender or subject); menus on unified views and recipient chips (move between To, Cc and Bcc).
+- Composer: drag files in to attach, `Ctrl+Enter` to send, `Esc` to minimize.
+- Polish: dialogs close with Escape and keep focus inside; shortcuts pause while a dialog or menu is open; Density setting now works; "Check for updates" reports what happened; number settings validate instead of snapping back; loading skeletons and friendlier empty states.
+
 ## 1.0.0
 
 First release.
